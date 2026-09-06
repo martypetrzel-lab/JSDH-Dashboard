@@ -106,21 +106,34 @@ export type ServiceTimelineReplacement = {
   to: Date;
   valid: boolean;
 };
+export type ServiceTimelineTemporaryAssignment = {
+  id: string;
+  from: Date;
+  to: Date;
+  role: Role;
+  slot: number;
+  memberId: string;
+  name: string;
+  originalAssignmentId: string | null;
+};
 export function serviceTimeline(
   start: Date,
   end: Date,
   crew: ServiceTimelineAssignment[],
   replacements: ServiceTimelineReplacement[],
+  temporaryAssignments: ServiceTimelineTemporaryAssignment[] = [],
 ) {
   const relevant = replacements.filter((item) =>
     intervalsOverlap(item.from, item.to, start, end),
   );
+  const relevantTemporary = temporaryAssignments.filter((item) => intervalsOverlap(item.from, item.to, start, end));
   const boundaries = [
     start,
     ...relevant.flatMap((item) => [
       item.from < start ? start : item.from,
       item.to > end ? end : item.to,
     ]),
+    ...relevantTemporary.flatMap((item) => [item.from < start ? start : item.from, item.to > end ? end : item.to]),
     end,
   ]
     .map((item) => item.getTime())
@@ -131,7 +144,10 @@ export function serviceTimeline(
     return {
       from: new Date(from),
       to: new Date(to),
-      crew: crew.map((item) => {
+      crew: (() => {
+        const temporary = relevantTemporary.filter((item) => item.from.getTime() <= from && item.to.getTime() >= to);
+        if (temporary.length === 4 && new Set(temporary.map((item) => item.memberId)).size === 4) return temporary.map((item) => ({ assignmentId: item.originalAssignmentId ?? item.id, role: item.role, memberId: item.memberId, name: item.name, replaced: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.memberId !== item.memberId, originalName: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.name ?? null }));
+        return crew.map((item) => {
         const replacement = relevant.find(
           (candidate) =>
             candidate.assignmentId === item.assignmentId &&
@@ -147,7 +163,8 @@ export function serviceTimeline(
           replaced: !!replacement,
           originalName: replacement ? item.name : null,
         };
-      }),
+        });
+      })(),
     };
   });
 }
@@ -860,6 +877,97 @@ function memberRecurringOutages(member: Candidate, start: Date, end: Date) {
   );
 }
 
+export type TemporaryCrewPlan = {
+  from: Date;
+  to: Date;
+  assignments: {
+    assignmentId: string;
+    role: Role;
+    slot: number;
+    member: Candidate;
+    originalRole: Role | null;
+  }[];
+  absentMemberIds: string[];
+};
+
+/** Finds the best complete, valid crew for each recurring-work-shift interval. */
+export function planTemporaryCrews(
+  baseAssignments: (Assignment & { assignmentId: string; slot?: number })[],
+  candidates: Candidate[],
+  start: Date,
+  end: Date,
+  minimumDt = 1,
+  random = Math.random,
+): { plans: TemporaryCrewPlan[]; diagnostic: CoverageDiagnostic | null } {
+  const outages = new Map(baseAssignments.map((item) => [
+    item.assignmentId,
+    memberRecurringOutages(item.member, start, end),
+  ]));
+  const points = [...new Set([
+    start.getTime(), end.getTime(),
+    ...[...outages.values()].flatMap((periods) => periods.flatMap((period) => [
+      Math.max(start.getTime(), period.from.getTime()),
+      Math.min(end.getTime(), period.to.getTime()),
+    ])),
+  ])].filter((value) => value >= start.getTime() && value <= end.getTime()).sort((a, b) => a - b);
+  const baseIds = new Set(baseAssignments.map((item) => item.member.id));
+  const baseByMember = new Map(baseAssignments.map((item) => [item.member.id, item]));
+  const plans: TemporaryCrewPlan[] = [];
+
+  for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
+    const from = new Date(points[segmentIndex]), to = new Date(points[segmentIndex + 1]);
+    if (from >= to) continue;
+    const absent = baseAssignments.filter((item) => outages.get(item.assignmentId)?.some((period) => intervalsOverlap(period.from, period.to, from, to)));
+    if (!absent.length) continue;
+    const absentIds = new Set(absent.map((item) => item.member.id));
+    const positions = baseAssignments.map((item, index) => ({ ...item, slot: item.slot ?? (item.role === "FIREFIGHTER" ? baseAssignments.slice(0, index + 1).filter((value) => value.role === "FIREFIGHTER").length : 1) }));
+    let best: { crew: Candidate[]; score: number[] } | null = null;
+    const selected: Candidate[] = [];
+    const compare = (left: number[], right: number[]) => {
+      for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return left[index] > right[index];
+      }
+      return false;
+    };
+    const search = (index: number) => {
+      if (index === positions.length) {
+        const crew = positions.map((position, positionIndex) => ({ role: position.role, member: selected[positionIndex], mode: "AUTO" as const }));
+        if (!validateCrew(crew, minimumDt).valid) return;
+        const kept = selected.filter((member) => baseIds.has(member.id)).length;
+        const unchanged = selected.filter((member, positionIndex) => member.id === positions[positionIndex].member.id).length;
+        const internalHighRoleMoves = selected.filter((member, positionIndex) => {
+          const original = baseByMember.get(member.id);
+          return !!original && original.role !== positions[positionIndex].role && (positions[positionIndex].role === "COMMANDER" || positions[positionIndex].role === "DRIVER");
+        }).length;
+        const fairness = -selected.filter((member) => !baseIds.has(member.id)).reduce((sum, member) => sum + member.serviceCount + (member.roleServiceCount?.[positions[selected.indexOf(member)].role] ?? 0), 0);
+        const score = [kept, internalHighRoleMoves, unchanged, fairness, random()];
+        if (!best || compare(score, best.score)) best = { crew: [...selected], score };
+        return;
+      }
+      const position = positions[index];
+      for (const member of candidates) {
+        if (selected.some((item) => item.id === member.id) || absentIds.has(member.id)) continue;
+        if (!eligibility(member, position.role, from, to).eligible || candidateUnavailable(member, from, to)) continue;
+        selected.push(member); search(index + 1); selected.pop();
+      }
+    };
+    search(0);
+    if (!best) return { plans: [], diagnostic: { from, to, missingRole: absent[0].role, availableCandidates: 0 } };
+    const bestCrew = (best as { crew: Candidate[]; score: number[] }).crew;
+    plans.push({
+      from, to, absentMemberIds: [...absentIds],
+      assignments: positions.map((position, index) => ({
+        assignmentId: position.assignmentId,
+        role: position.role,
+        slot: position.slot,
+        member: bestCrew[index],
+        originalRole: baseByMember.get(bestCrew[index].id)?.role ?? null,
+      })),
+    });
+  }
+  return { plans, diagnostic: null };
+}
+
 export function planCoveredSegments(
   baseAssignments: (Assignment & { assignmentId: string })[],
   candidates: Candidate[],
@@ -871,146 +979,14 @@ export function planCoveredSegments(
   replacements: ReplacementPlanItem[];
   diagnostic: CoverageDiagnostic | null;
 } {
-  const outages = new Map(
-    baseAssignments.map((item) => [
-      item.assignmentId,
-      memberRecurringOutages(item.member, start, end),
-    ]),
-  );
-  const boundaries = [
-      start,
-      end,
-      ...[...outages.values()].flatMap((items) =>
-        items.flatMap((item) => [item.from, item.to]),
-      ),
-    ]
-      .map((item) => item.getTime())
-      .filter((value) => value >= start.getTime() && value <= end.getTime())
-      .sort((a, b) => a - b),
-    segments = [...new Set(boundaries)]
-      .slice(0, -1)
-      .map((from, index) => ({
-        from: new Date(from),
-        to: new Date([...new Set(boundaries)][index + 1]),
-      }))
-      .filter((item) => item.from < item.to),
-    baseIds = new Set(baseAssignments.map((item) => item.member.id)),
-    preferred = new Map<string, string>(),
-    planned: ReplacementPlanItem[] = [];
-  for (const segment of segments) {
-    const absent = baseAssignments.filter((item) =>
-      outages
-        .get(item.assignmentId)
-        ?.some((period) =>
-          intervalsOverlap(period.from, period.to, segment.from, segment.to),
-        ),
-    );
-    if (!absent.length) continue;
-    const fixed = baseAssignments.filter((item) => !absent.includes(item)),
-      chosen: {
-        assignment: Assignment & { assignmentId: string };
-        member: Candidate;
-      }[] = [];
-    const search = (index: number): boolean => {
-      if (index === absent.length)
-        return validateCrew(
-          [
-            ...fixed,
-            ...chosen.map((item) => ({
-              role: item.assignment.role,
-              member: item.member,
-              mode: "AUTO" as const,
-            })),
-          ],
-          minimumDt,
-        ).valid;
-      const assignment = absent[index],
-        used = new Set([
-          ...fixed.map((item) => item.member.id),
-          ...chosen.map((item) => item.member.id),
-          ...baseIds,
-        ]),
-        pool = orderedCandidates(
-          candidates.filter(
-            (candidate) =>
-              !used.has(candidate.id) &&
-              eligibility(candidate, assignment.role, segment.from, segment.to)
-                .eligible &&
-              !candidateUnavailable(candidate, segment.from, segment.to),
-          ),
-          assignment.role,
-          DEFAULT_FAIRNESS_SETTINGS,
-          random,
-        ).sort(
-          (left, right) =>
-            Number(right.id === preferred.get(assignment.member.id)) -
-            Number(left.id === preferred.get(assignment.member.id)),
-        );
-      for (const member of pool) {
-        chosen.push({ assignment, member });
-        if (search(index + 1)) return true;
-        chosen.pop();
-      }
-      return false;
-    };
-    if (!search(0)) {
-      const assignment =
-          absent.find(
-            (item) =>
-              !candidates.some(
-                (candidate) =>
-                  !baseIds.has(candidate.id) &&
-                  eligibility(candidate, item.role, segment.from, segment.to)
-                    .eligible &&
-                  !candidateUnavailable(candidate, segment.from, segment.to),
-              ),
-          ) ?? absent[0],
-        availableCandidates = candidates.filter(
-          (candidate) =>
-            !baseIds.has(candidate.id) &&
-            eligibility(candidate, assignment.role, segment.from, segment.to)
-              .eligible &&
-            !candidateUnavailable(candidate, segment.from, segment.to),
-        ).length;
-      return {
-        replacements: [],
-        diagnostic: {
-          from: segment.from,
-          to: segment.to,
-          missingRole: assignment.role,
-          availableCandidates,
-        },
-      };
-    }
-    for (const item of chosen) {
-      preferred.set(item.assignment.member.id, item.member.id);
-      const previous = [...planned]
-        .reverse()
-        .find(
-          (candidate) =>
-            candidate.assignmentId === item.assignment.assignmentId &&
-            candidate.replacementMemberId === item.member.id &&
-            candidate.to.getTime() === segment.from.getTime(),
-        );
-      if (
-        previous &&
-        previous.to.getTime() === segment.from.getTime()
-      )
-        previous.to = segment.to;
-      else
-        planned.push({
-          assignmentId: item.assignment.assignmentId,
-          originalMemberId: item.assignment.member.id,
-          replacementMemberId: item.member.id,
-          role: item.assignment.role,
-          from: segment.from,
-          to: segment.to,
-          valid: true,
-          issue: null,
-        });
-    }
-  }
-  return { replacements: planned, diagnostic: null };
+  const result = planTemporaryCrews(baseAssignments, candidates, start, end, minimumDt, random);
+  return {
+    diagnostic: result.diagnostic,
+    replacements: result.plans.flatMap((plan) => plan.assignments.flatMap((item) => {
+      const original = baseAssignments.find((assignment) => assignment.assignmentId === item.assignmentId)!;
+      return item.member.id === original.member.id ? [] : [{ assignmentId: item.assignmentId, originalMemberId: original.member.id, replacementMemberId: item.member.id, role: item.role, from: plan.from, to: plan.to, valid: true, issue: null }];
+    })),
+  };
 }
 
 export function solveCoveredWeek(
@@ -1063,6 +1039,8 @@ export function solveCoveredWeek(
         role,
         fairness,
         random,
+      ).sort((left, right) =>
+        memberRecurringOutages(left, start, end).length - memberRecurringOutages(right, start, end).length,
       );
     for (const member of pool) {
       used.add(member.id);

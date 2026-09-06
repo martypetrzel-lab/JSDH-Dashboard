@@ -19,6 +19,7 @@ import {
   nextServiceWeek,
   planCoveredSegments,
   planTemporaryReplacements,
+  planTemporaryCrews,
   planWeeksSequentially,
   planningServiceWeek,
   recurringOccurrences,
@@ -834,6 +835,31 @@ test("coverage solver odmítne nepokrytou první sestavu a zkusí jinou základn
     result.plan!.crew.find((item) => item.role === "COMMANDER")?.member.id,
     "v-dobry",
   );
+});
+test("dočasná posádka přesune hasiče na velitele a doplní externího hasiče bez duplicity", () => {
+  const commander = base("velitel", ["COMMANDER"], true);
+  commander.recurringUnavailable = [{ anchorStart: new Date("2026-09-08T04:00:00Z"), durationMinutes: 1440, intervalMinutes: 99999 }];
+  const driver = base("strojnik", ["DRIVER"]);
+  const internal = base("vnitrni", ["COMMANDER", "FIREFIGHTER"], true);
+  const firefighter = base("hasic", ["FIREFIGHTER"]);
+  const external = base("externi", ["FIREFIGHTER"]);
+  const assignments = [commander, driver, internal, firefighter].map((member, index) => ({ assignmentId: `a${index}`, slot: index < 2 ? 1 : index - 1, role: (["COMMANDER", "DRIVER", "FIREFIGHTER", "FIREFIGHTER"] as Role[])[index], member, mode: "AUTO" as const }));
+  const result = planTemporaryCrews(assignments, [...assignments.map((item) => item.member), external], week.start, week.end, 1, () => 0);
+  assert.equal(result.diagnostic, null);
+  const crew = result.plans[0].assignments;
+  assert.equal(crew.find((item) => item.role === "COMMANDER")?.member.id, "vnitrni");
+  assert.ok(crew.some((item) => item.role === "FIREFIGHTER" && item.member.id === "externi"));
+  assert.equal(new Set(crew.map((item) => item.member.id)).size, 4);
+});
+
+test("dočasná posádka přesune hasiče na strojníka", () => {
+  const driver = base("strojnik", ["DRIVER"]);
+  driver.recurringUnavailable = [{ anchorStart: new Date("2026-09-08T04:00:00Z"), durationMinutes: 1440, intervalMinutes: 99999 }];
+  const members = [base("velitel", ["COMMANDER"], true), driver, base("vnitrni", ["DRIVER", "FIREFIGHTER"]), base("hasic", ["FIREFIGHTER"])];
+  const roles: Role[] = ["COMMANDER", "DRIVER", "FIREFIGHTER", "FIREFIGHTER"];
+  const assignments = members.map((member, index) => ({ assignmentId: `d${index}`, slot: index < 2 ? 1 : index - 1, role: roles[index], member, mode: "AUTO" as const }));
+  const result = planTemporaryCrews(assignments, [...members, base("externi", ["FIREFIGHTER"])], week.start, week.end, 1, () => 0);
+  assert.equal(result.plans[0].assignments.find((item) => item.role === "DRIVER")?.member.id, "vnitrni");
 });
 test("pokud je jediný velitel běžně nedostupný, základní služba se nevytvoří", () => {
   const commander = base("v", ["COMMANDER"], true);

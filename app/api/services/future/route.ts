@@ -15,6 +15,7 @@ import {
   type Role,
 } from "@/lib/service";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
+import { syncServiceReplacements } from "@/lib/service-replacements-server";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -251,6 +252,8 @@ export async function POST(request: Request) {
         },
       });
     });
+    const regeneratedIds = await prisma.weeklyService.findMany({ where: { weekStart: { in: planned.planned.map((item) => item.start) } }, select: { id: true } });
+    await Promise.all(regeneratedIds.map((item) => syncServiceReplacements(item.id)));
     const services = await prisma.weeklyService.findMany({
       where: { weekStart: { in: intervals.map((item) => item.start) } },
       include: {
@@ -259,6 +262,7 @@ export async function POST(request: Request) {
           include: { originalMember: true, replacementMember: true },
           orderBy: { from: "asc" },
         },
+        temporaryAssignments: { include: { member: true }, orderBy: [{ from: "asc" }, { role: "asc" }, { slot: "asc" }] },
       },
       orderBy: { weekStart: "asc" },
     });

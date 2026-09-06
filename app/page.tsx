@@ -19,7 +19,7 @@ export default async function Home() {
     prisma.recurringUnavailability.findMany({where:{active:true},include:{member:true},orderBy:{anchorStart:'asc'}}),
     prisma.medicalTemplate.findUnique({ where: { id: 'current' }, select: { filename: true } }),
     prisma.settings.findUnique({ where: { id: 'default' }, select: { weekStartDay: true, weekStartHour: true, weekEndDay: true, weekEndHour: true, minimumDt: true, conditioningWarningDays:true, timezone: true } }),
-    prisma.weeklyService.findFirst({ where: { status: { in: ['DRAFT','CONFIRMED'] }, weekStart: { lte: new Date(now.getTime()+7*86400000) }, weekEnd: { gt: now } }, include: { assignments: { orderBy: [{ role: 'asc' }, { slot: 'asc' }] }, replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc'}} }, orderBy: { weekStart: 'asc' } }),
+    prisma.weeklyService.findFirst({ where: { status: { in: ['DRAFT','CONFIRMED'] }, weekStart: { lte: new Date(now.getTime()+7*86400000) }, weekEnd: { gt: now } }, include: { assignments: { orderBy: [{ role: 'asc' }, { slot: 'asc' }] }, replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc'}}, temporaryAssignments:{include:{member:true},orderBy:[{from:'asc'},{role:'asc'},{slot:'asc'}]} }, orderBy: { weekStart: 'asc' } }),
     prisma.shoppingItem.findMany({orderBy:{createdAt:'desc'}}),
   ]);
   const absences: AbsenceRow[] = unavailability.map((item) => ({

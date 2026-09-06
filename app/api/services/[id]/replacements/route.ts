@@ -7,7 +7,7 @@ import { serializeWeeklyService } from '@/lib/weekly-service-data';
 
 export const runtime='nodejs';
 const schema=z.object({assignmentId:z.string().min(1),from:z.iso.datetime(),to:z.iso.datetime(),reason:z.string().trim().max(500).optional().default('')});
-const include={assignments:{orderBy:[{role:'asc' as const},{slot:'asc' as const}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc' as const}}};
+const include={assignments:{orderBy:[{role:'asc' as const},{slot:'asc' as const}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc' as const}},temporaryAssignments:{include:{member:true},orderBy:[{from:'asc' as const},{role:'asc' as const},{slot:'asc' as const}]}};
 
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){
   if(!(await requireAdminApi()))return NextResponse.json({error:'Nepřihlášený přístup.'},{status:401});

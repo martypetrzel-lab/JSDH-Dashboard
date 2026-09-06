@@ -12,6 +12,7 @@ import {
   type Role,
 } from "@/lib/service";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
+import { syncServiceReplacements } from "@/lib/service-replacements-server";
 
 export const runtime = "nodejs";
 const inputSchema = z.object({ reference: z.iso.datetime().optional() });
@@ -203,6 +204,7 @@ export async function POST(request: Request) {
       });
       return service.id;
     });
+    await syncServiceReplacements(serviceId);
     const service = await prisma.weeklyService.findUniqueOrThrow({
       where: { id: serviceId },
       include: {
@@ -211,6 +213,7 @@ export async function POST(request: Request) {
           include: { originalMember: true, replacementMember: true },
           orderBy: { from: "asc" },
         },
+        temporaryAssignments: { include: { member: true }, orderBy: [{ from: "asc" }, { role: "asc" }, { slot: "asc" }] },
       },
     });
     return NextResponse.json({ service: serializeWeeklyService(service) });

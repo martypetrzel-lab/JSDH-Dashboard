@@ -14,6 +14,7 @@ import {
 } from "@/lib/service";
 import { toPlanningCandidates } from "@/lib/service-candidates";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
+import { syncServiceReplacements } from "@/lib/service-replacements-server";
 
 export const runtime = "nodejs";
 const schema = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) });
@@ -164,6 +165,7 @@ export async function POST(request: Request) {
         return service.id;
       });
       createdIds.push(id);
+      await syncServiceReplacements(id);
       history.push(
         ...plan.crew.map((assignment) => ({
           memberId: assignment.member.id,
@@ -189,6 +191,7 @@ export async function POST(request: Request) {
           include: { originalMember: true, replacementMember: true },
           orderBy: { from: "asc" },
         },
+        temporaryAssignments: { include: { member: true }, orderBy: [{ from: "asc" }, { role: "asc" }, { slot: "asc" }] },
       },
       orderBy: { weekStart: "asc" },
     });

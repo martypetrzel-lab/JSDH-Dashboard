@@ -40,6 +40,11 @@ enum ReplacementSource {
   MANUAL
 }
 
+enum TemporaryAssignmentSource {
+  RECURRING
+  MANUAL
+}
+
 enum DtActivityType {
   CONDITIONING
   INCIDENT
@@ -96,6 +101,7 @@ model Member {
   recurringUnavailability  RecurringUnavailability[]
   replacementsAsOriginal   ServiceReplacement[]      @relation("ReplacementOriginal")
   replacementsAsSubstitute ServiceReplacement[]      @relation("ReplacementSubstitute")
+  temporaryAssignments     ServiceTemporaryAssignment[]
 
   @@index([active])
   @@index([lastName, firstName])
@@ -176,6 +182,7 @@ model WeeklyService {
   updatedAt          DateTime                  @updatedAt
   assignments        WeeklyServiceAssignment[]
   replacements       ServiceReplacement[]
+  temporaryAssignments ServiceTemporaryAssignment[]
 
   @@index([status, weekStart])
 }
@@ -194,10 +201,33 @@ model WeeklyServiceAssignment {
   service       WeeklyService        @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   member        Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
   replacements  ServiceReplacement[]
+  temporaryAssignments ServiceTemporaryAssignment[]
 
   @@unique([serviceId, role, slot])
   @@unique([serviceId, memberId])
   @@index([memberId])
+}
+
+model ServiceTemporaryAssignment {
+  id                   String                    @id @default(cuid())
+  serviceId            String
+  from                 DateTime
+  to                   DateTime
+  role                 AssignmentRole
+  slot                 Int                       @default(1)
+  memberId             String
+  originalAssignmentId String?
+  source               TemporaryAssignmentSource @default(RECURRING)
+  reason               String?
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  service              WeeklyService             @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  member               Member                    @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  originalAssignment   WeeklyServiceAssignment?  @relation(fields: [originalAssignmentId], references: [id], onDelete: SetNull)
+
+  @@unique([serviceId, from, to, role, slot])
+  @@index([serviceId, from, to])
+  @@index([memberId, from, to])
 }
 
 model ServiceReplacement {

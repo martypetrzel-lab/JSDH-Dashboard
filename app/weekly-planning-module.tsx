@@ -1064,6 +1064,12 @@ function WeekCard({
       from: new Date(item.from),
       to: new Date(item.to),
     })),
+    service.temporaryCrews.flatMap((temporary) => temporary.assignments.map((item) => ({
+      ...item,
+      role: item.roleKey,
+      from: new Date(temporary.from),
+      to: new Date(temporary.to),
+    }))),
   );
   const save = async () => {
     const success = await onSaveCrew(
@@ -1118,6 +1124,21 @@ function WeekCard({
   const selectedOutageMember = service.crew.find(
     (item) => item.assignmentId === outage?.assignmentId,
   );
+  const editTemporaryCrew = async (temporary: DashboardService["temporaryCrews"][number]) => {
+    const labels = { COMMANDER: "Velitel", DRIVER: "Strojník", FIREFIGHTER: "Hasič" } as const;
+    const selected: typeof temporary.assignments = [];
+    for (const assignment of temporary.assignments) {
+      const entered = window.prompt(`${labels[assignment.roleKey]} – zadejte přesné jméno člena:`, assignment.name);
+      if (entered === null) return;
+      const member = members.find((item) => item.name.localeCompare(entered.trim(), "cs", { sensitivity: "base" }) === 0);
+      if (!member) { window.alert(`Člen „${entered}“ nebyl nalezen.`); return; }
+      selected.push({ ...assignment, memberId: member.id, name: member.name });
+    }
+    const response = await fetch(`/api/services/${service.id}/temporary-crew`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: temporary.from, to: temporary.to, reason: temporary.reason ?? "Ruční úprava záskoku", assignments: selected.map((item) => ({ role: item.roleKey, slot: item.slot, memberId: item.memberId, originalAssignmentId: item.originalAssignmentId })) }) });
+    const payload = await response.json();
+    if (!response.ok) { window.alert(payload.error ?? "Dočasnou sestavu se nepodařilo uložit."); return; }
+    window.location.reload();
+  };
 
   return (
     <>
@@ -1153,6 +1174,19 @@ function WeekCard({
             </span>
           </div>
         )}
+        {service.temporaryCrews.map((temporary) => (
+          <div className="replacement-details" key={`${temporary.from}-${temporary.to}`}>
+            <div>
+              <span><Badge variant="outline">Dočasná změna funkcí</Badge>{formatServiceDateTime(new Date(temporary.from), settings.timezone)} → {formatServiceDateTime(new Date(temporary.to), settings.timezone)}</span>
+              <strong>{temporary.assignments.map((assignment) => {
+                const base = service.crew.find((item) => item.assignmentId === assignment.originalAssignmentId);
+                const label = assignment.roleKey === "COMMANDER" ? "Velitel" : assignment.roleKey === "DRIVER" ? "Strojník" : "Hasič";
+                return base && base.memberId === assignment.memberId ? `${assignment.name} – ${label}` : base && service.crew.some((item) => item.memberId === assignment.memberId) ? `${assignment.name}: ${service.crew.find((item) => item.memberId === assignment.memberId)?.role} → ${label}` : `${assignment.name}: záskok → ${label}`;
+              }).join(" · ")}</strong>
+              {service.status !== "CANCELLED" && <Button variant="outline" size="sm" onClick={() => void editTemporaryCrew(temporary)}><Pencil size={14} /> Upravit záskok</Button>}
+            </div>
+          </div>
+        ))}
         <div className="crew-list">
           {service.crew.map((member, index) => {
             const selectedId =

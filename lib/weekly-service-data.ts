@@ -33,6 +33,13 @@ export type DashboardService = {
     dt: boolean;
   }[];
   replacements: DashboardReplacement[];
+  temporaryCrews: {
+    from: string;
+    to: string;
+    source: 'RECURRING' | 'MANUAL';
+    reason: string | null;
+    assignments: { id: string; memberId: string; name: string; roleKey: 'COMMANDER' | 'DRIVER' | 'FIREFIGHTER'; slot: number; originalAssignmentId: string | null }[];
+  }[];
 };
 
 type SerializableService = {
@@ -58,6 +65,11 @@ type SerializableService = {
     source?: string;
     originalMember: { firstName: string; lastName: string };
     replacementMember: { firstName: string; lastName: string } | null;
+  }[];
+  temporaryAssignments?: {
+    id: string; from: Date; to: Date; role: string; slot: number; memberId: string;
+    originalAssignmentId: string | null; source: string; reason: string | null;
+    member: { firstName: string; lastName: string };
   }[];
 };
 
@@ -98,5 +110,18 @@ export function serializeWeeklyService(service: SerializableService): DashboardS
       reason: item.reason ?? null,
       source: item.source === 'MANUAL' ? 'MANUAL' : 'RECURRING',
     })),
+    temporaryCrews: [...new Map((service.temporaryAssignments ?? []).map((item) => {
+      const key = `${item.from.toISOString()}|${item.to.toISOString()}`;
+      return [key, {
+        from: item.from.toISOString(), to: item.to.toISOString(),
+        source: item.source === 'MANUAL' ? 'MANUAL' as const : 'RECURRING' as const,
+        reason: item.reason,
+        assignments: (service.temporaryAssignments ?? []).filter((row) => row.from.getTime() === item.from.getTime() && row.to.getTime() === item.to.getTime()).map((row) => ({
+          id: row.id, memberId: row.memberId, name: memberName(row.member),
+          roleKey: row.role as 'COMMANDER' | 'DRIVER' | 'FIREFIGHTER', slot: row.slot,
+          originalAssignmentId: row.originalAssignmentId,
+        })),
+      }];
+    })).values()],
   };
 }

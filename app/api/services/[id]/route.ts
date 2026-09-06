@@ -412,6 +412,7 @@ export async function PUT(
           include: { originalMember: true, replacementMember: true },
           orderBy: { from: "asc" },
         },
+        temporaryAssignments: { include: { member: true }, orderBy: [{ from: "asc" }, { role: "asc" }, { slot: "asc" }] },
       },
     });
     return NextResponse.json({

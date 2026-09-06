@@ -71,6 +71,18 @@ test("aktivní záskok změní effective crew a DT, budoucí záskok nikoliv", (
   assert.equal(before[0].memberId, "m1");
   assert.equal(before.filter((item) => item.dt).length, 1);
 });
+test("current crew vrací dočasné role bez duplicit", () => {
+  const source = service();
+  source.temporaryAssignments = [
+    { id: "t1", from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), role: "COMMANDER", slot: 1, memberId: "m4", originalAssignmentId: "a1", member: { firstName: "Čtvrtý", lastName: "Člen", dt: true } },
+    { id: "t2", from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), role: "DRIVER", slot: 1, memberId: "m2", originalAssignmentId: "a2", member: { firstName: "Druhý", lastName: "Člen", dt: false } },
+    { id: "t3", from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), role: "FIREFIGHTER", slot: 1, memberId: "m3", originalAssignmentId: "a3", member: { firstName: "Třetí", lastName: "Člen", dt: false } },
+    { id: "t4", from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), role: "FIREFIGHTER", slot: 2, memberId: "m5", originalAssignmentId: "a4", member: { firstName: "Pátý", lastName: "Člen", dt: false } },
+  ];
+  const crew = effectiveIntegrationCrew(source, new Date("2026-09-08T10:00:00Z"));
+  assert.deepEqual(crew.map((item) => `${item.role}:${item.memberId}`), ["COMMANDER:m4", "DRIVER:m2", "FIREFIGHTER:m3", "FIREFIGHTER:m5"]);
+  assert.equal(new Set(crew.map((item) => item.memberId)).size, 4);
+});
 
 test("next-service vybírá nejbližší CONFIRMED a ignoruje DRAFT", () => {
   const now = new Date("2026-09-06T10:00:00Z");

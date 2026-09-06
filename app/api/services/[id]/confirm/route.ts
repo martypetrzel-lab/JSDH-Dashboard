@@ -26,7 +26,7 @@ export async function POST(_request:Request,context:{params:Promise<{id:string}>
       prisma.weeklyService.update({where:{id},data:{status:'CONFIRMED',confirmedAt:new Date()}}),
       prisma.auditLog.create({data:{action:'WEEK_CONFIRMED',entity:'WeeklyService',entityId:id,description:'Týdenní posádka byla potvrzena.',actor:'Administrátor'}}),
     ]);
-    const confirmed=await prisma.weeklyService.findUniqueOrThrow({where:{id},include:{assignments:{orderBy:[{role:'asc'},{slot:'asc'}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc'}}}});
+    const confirmed=await prisma.weeklyService.findUniqueOrThrow({where:{id},include:{assignments:{orderBy:[{role:'asc'},{slot:'asc'}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc'}},temporaryAssignments:{include:{member:true},orderBy:[{from:'asc'},{role:'asc'},{slot:'asc'}]}}});
     return NextResponse.json({service:serializeWeeklyService(confirmed)});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Službu se nepodařilo potvrdit.'},{status:400});}
 }
