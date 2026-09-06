@@ -35,6 +35,16 @@ enum SelectionMode {
   MANUAL
 }
 
+enum DtActivityType {
+  CONDITIONING
+  INCIDENT
+}
+
+enum DriverActivityType {
+  CONDITIONING
+  INCIDENT
+}
+
 model Member {
   id                String                    @id @default(cuid())
   firstName         String
@@ -55,9 +65,44 @@ model Member {
   updatedAt         DateTime                  @updatedAt
   unavailability    Unavailability[]
   assignments       WeeklyServiceAssignment[]
+  dtActivities      DtActivity[]
+  driverActivities  DriverActivity[]
 
   @@index([active])
   @@index([lastName, firstName])
+}
+
+model DtActivity {
+  id                String         @id @default(cuid())
+  memberId          String
+  date              DateTime       @db.Date
+  type              DtActivityType
+  cylinderNumber    String?
+  carrierNumber     String?
+  maskNumber        String?
+  incidentReference String?
+  note              String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  member            Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, date])
+}
+
+model DriverActivity {
+  id                String             @id @default(cuid())
+  memberId          String
+  date              DateTime           @db.Date
+  type              DriverActivityType
+  vehicle           String
+  kilometers        Int?
+  incidentReference String?
+  note              String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  member            Member             @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, date])
 }
 
 model Unavailability {
@@ -130,6 +175,7 @@ model Settings {
   preferRested     Boolean  @default(true)
   allowConsecutive Boolean  @default(true)
   minimumDt        Int      @default(1)
+  conditioningWarningDays Int @default(30)
   timezone         String   @default("Europe/Prague")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

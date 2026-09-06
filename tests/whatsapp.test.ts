@@ -11,3 +11,15 @@ void test('WhatsApp zpráva zachová emoji a neobsahuje náhradní otazníky', (
   assert.match(decoded, /🫁 DT/);
   assert.doesNotMatch(decoded, /�/);
 });
+
+void test('WhatsApp obsahuje pouze povinnosti vyžadující pozornost',()=>{
+  const message=buildWhatsAppMessage({from:'od',to:'do',commander:'Velitel',driver:'Strojník',firefighters:['Hasič A','Hasič B'],dt:['Velitel'],obligations:{dt:[{name:'Člen po termínu',due:'2026-09-02',overdue:true}],drivers:[{name:'Čekající strojník'}],monthLabel:'září 2026'}});
+  assert.match(message,/Člen po termínu – PO TERMÍNU od 02\.09\.2026/);
+  assert.match(message,/Čekající strojník – chybí/);
+  assert.doesNotMatch(message,/Splněný člen/);
+});
+
+void test('WhatsApp oznámí, že nejsou žádné povinnosti',()=>{
+  const message=buildWhatsAppMessage({from:'od',to:'do',commander:'Velitel',driver:'Strojník',firefighters:['Hasič A','Hasič B'],dt:['Velitel'],obligations:{dt:[],drivers:[],monthLabel:'září 2026'}});
+  assert.match(message,/Kondiční povinnosti jsou aktuálně splněny/);
+});

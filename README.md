@@ -14,6 +14,12 @@ Požadavek na nositele dýchací techniky se kontroluje pro celou čtyřčlennou
 
 Tlačítko **Navrhnout posádku** na stránce Týdenní služba načítá členy, oprávnění, zdravotní platnost, přesné nedostupnosti a historii služeb přímo z PostgreSQL. Návrh ukládá jako `DRAFT`; při potvrzení se všechna pravidla znovu kontrolují nad aktuálními databázovými údaji.
 
+## Kondice a povinnosti
+
+Modul **Kondice a povinnosti** eviduje použití dýchací techniky aktivních členů s `dt=true` a měsíční jízdy všech aktivních členů s `canDrive=true`. Kondiční i zásahová událost se započítává stejně. Další termín DT je přesně tři kalendářní měsíce od nejnovější události; upozornění se standardně zobrazí 30 dní předem. Jízdy se vyhodnocují podle aktuálního kalendářního měsíce v `Europe/Prague`.
+
+Záznamy lze vytvářet, upravovat i odstraňovat a každá změna vzniká společně se záznamem v AuditLogu. Ruční WhatsApp sdílení potvrzené služby obsahuje pouze povinnosti, které vyžadují pozornost, nikoli kompletní seznam členů.
+
 ## Požadavky
 
 - Node.js 22 LTS nebo 24

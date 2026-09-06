@@ -5,6 +5,11 @@ type WhatsAppCrew = {
   driver: string;
   firefighters: [string, string];
   dt: string[];
+  obligations?: {
+    dt: { name: string; due: string | null; overdue: boolean }[];
+    drivers: { name: string }[];
+    monthLabel: string;
+  };
 };
 
 // Emoji jsou zapsané pomocí Unicode escape sekvencí. Zdrojový soubor tak
@@ -18,7 +23,7 @@ const ICON = {
 };
 
 export function buildWhatsAppMessage(crew: WhatsAppCrew) {
-  return [
+  const lines = [
     `${ICON.engine} JSDH NEHVIZDY – TÝDENNÍ SLUŽBA`,
     '',
     `${ICON.calendar} ${crew.from} – ${crew.to}`,
@@ -31,7 +36,25 @@ export function buildWhatsAppMessage(crew: WhatsAppCrew) {
     `${ICON.lungs} DT: ${crew.dt.join(', ')}`,
     '',
     `${ICON.check} Posádka 3+1 potvrzena.`,
-  ].join('\n');
+  ];
+  if (crew.obligations) {
+    lines.push('', '\u{26A0}\u{FE0F} POVINNOSTI');
+    if (!crew.obligations.dt.length && !crew.obligations.drivers.length) lines.push('', `${ICON.check} Kondiční povinnosti jsou aktuálně splněny.`);
+    if (crew.obligations.dt.length) {
+      lines.push('', `${ICON.lungs} DT:`);
+      for (const item of crew.obligations.dt) lines.push(`${item.name} – ${item.due ? item.overdue ? `PO TERMÍNU od ${formatDue(item.due)}` : `prodýchání do ${formatDue(item.due)}` : 'bez záznamu'}`);
+    }
+    if (crew.obligations.drivers.length) {
+      lines.push('', `${ICON.engine} Kondiční jízdy – ${crew.obligations.monthLabel}:`);
+      for (const item of crew.obligations.drivers) lines.push(`${item.name} – chybí`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatDue(value: string) {
+  const [year, month, day] = value.split('-');
+  return `${day}.${month}.${year}`;
 }
 
 export function createWhatsAppShareUrl(message: string) {
