@@ -1,4 +1,4 @@
-const REQUIRED_ENV = ['DATABASE_URL', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'SESSION_SECRET', 'TZ'] as const;
+const REQUIRED_ENV = ['DATABASE_URL', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'SESSION_SECRET', 'INTEGRATION_API_KEY', 'TZ'] as const;
 
 export type RuntimeEnv = Record<(typeof REQUIRED_ENV)[number], string>;
 

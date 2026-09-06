@@ -71,6 +71,26 @@ Návrh služby lze úplně smazat. Potvrzená služba se kvůli historii nemaže
 
 Časový průběh v detailu služby vzniká vždy z aktuálních záznamů `WeeklyService`, `WeeklyServiceAssignment` a `ServiceReplacement`. Nevyřešený výpadek se zobrazí jako **Vyžaduje záskok** a DRAFT s chybějícím náhradníkem nelze potvrdit. Každé zrušení, změna základního člena a vytvoření, úprava či odstranění ručního záskoku se zapisuje do `AuditLog`.
 
+## Integrační REST API v1
+
+Všechny integrační endpointy vyžadují serverovou proměnnou `INTEGRATION_API_KEY` a hlavičku `Authorization: Bearer <klíč>`. Klíč neposílejte v URL ani ve frontendovém kódu. Odpovědi používají ISO 8601, časové pásmo `Europe/Prague` a hlavičku `Cache-Control: no-store`.
+
+```bash
+curl -H "Authorization: Bearer $JSDH_API_KEY" \
+  https://DOMAIN/api/integration/current-crew
+```
+
+Dostupné endpointy:
+
+- `GET /api/integration/current-crew` – aktuální potvrzená služba, základní i skutečná posádka a právě aktivní záskoky.
+- `GET /api/integration/next-service` – nejbližší budoucí potvrzená služba.
+- `GET /api/integration/month?month=2026-09` – služby začínající ve zvoleném měsíci.
+- `GET /api/integration/alerts` – aktuální upozornění na DT, kondiční jízdy, zdravotní platnost a problémy služeb.
+- `GET /api/integration/conditioning` – provozní stav DT a strojníků bez citlivých poznámek.
+- `GET /api/integration/unavailability?from=2026-09-01&to=2026-10-01` – běžná nedostupnost a vypočtené výskyty pracovních směn 24/48. Bez parametrů vrací interval od aktuálního času do dalších 30 dní.
+
+API nevrací hesla, klíče, session, pokusy o přihlášení, datum narození, zdravotní dokumenty ani auditní log.
+
 ## Kontroly kvality
 
 ```bash
@@ -91,10 +111,11 @@ Health check je dostupný na `/api/health`. Vrací pouze stav služby a žádné
 5. Nastavte `ADMIN_USERNAME`.
 6. Nastavte `ADMIN_PASSWORD` na zvolené heslo prostřednictvím Railway Variables.
 7. Nastavte náhodný `SESSION_SECRET` o délce alespoň 32 znaků.
-8. Nastavte `TZ=Europe/Prague`.
-9. Jako **Pre-deploy Command** ponechte `npx prisma migrate deploy`.
-10. Spusťte deploy.
-11. V části Networking zvolte **Generate Domain**.
+8. Nastavte dlouhý náhodný `INTEGRATION_API_KEY` pro integrační REST API.
+9. Nastavte `TZ=Europe/Prague`.
+10. Jako **Pre-deploy Command** ponechte `npx prisma migrate deploy`.
+11. Spusťte deploy.
+12. V části Networking zvolte **Generate Domain**.
 
 Soubor `railway.toml` nastavuje Railpack, build, bezpečné nasazení migrací, start aplikace a health check. `prisma migrate deploy` pouze aplikuje dosud chybějící verzované migrace; neresetuje a nemaže existující produkční data. Next.js automaticky respektuje proměnnou `PORT`, kterou přiděluje Railway.
 
@@ -104,6 +125,7 @@ Soubor `railway.toml` nastavuje Railpack, build, bezpečné nasazení migrací, 
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
 - `SESSION_SECRET`
+- `INTEGRATION_API_KEY`
 - `TZ`
 
 Aplikace bez těchto hodnot nepoužije nebezpečné výchozí přihlašovací údaje a vrátí srozumitelnou serverovou chybu.
