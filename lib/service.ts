@@ -9,8 +9,10 @@ export const DEFAULT_SERVICE_SETTINGS:ServiceTimeSettings={weekStartDay:1,weekSt
 export const DEFAULT_FAIRNESS_SETTINGS:FairnessSettings={fairDraw:true,considerTotal:true,considerRole:true,preferRested:true,allowConsecutive:true};
 export const MISSING_DT_ERROR='Pro tento časový interval nelze sestavit platnou posádku.\nChybí nositel dýchací techniky.';
 
-export const canHardDeleteService=(status:'DRAFT'|'CONFIRMED'|'CANCELLED')=>status==='DRAFT';
+export const canHardDeleteService=(status:'DRAFT'|'CONFIRMED'|'CANCELLED',confirmedAcknowledged=false)=>status==='DRAFT'||(status==='CONFIRMED'&&confirmedAcknowledged);
 export const canCancelService=(status:'DRAFT'|'CONFIRMED'|'CANCELLED')=>status!=='CANCELLED';
+export function serviceDeletionAuditDescription(service:{from:Date;to:Date;status:string;crew:{role:string;name:string}[];replacementCount:number}){return`Interval: ${service.from.toISOString()} → ${service.to.toISOString()}; stav před smazáním: ${service.status}; sestava: ${service.crew.map(item=>`${item.role}: ${item.name}`).join(', ')}; počet záskoků: ${service.replacementCount}.`;}
+export function removeServiceFromPlan<T extends {id:string}>(services:T[],deletedId:string){return services.filter(service=>service.id!==deletedId);}
 export const emergencyReplacementEnd=(mode:'CUSTOM'|'UNTIL_END',selectedTo:Date,weekEnd:Date)=>mode==='UNTIL_END'?weekEnd:selectedTo;
 
 export type ServiceTimelineAssignment={assignmentId:string;role:Role;memberId:string;name:string};
