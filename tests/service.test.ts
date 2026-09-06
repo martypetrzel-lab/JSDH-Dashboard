@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MISSING_DT_ERROR, assembleCrew, eligibility, fromLocalDateTimeInput, intervalsOverlap, medicalValidUntil, replacementCandidates, serviceWeek, suggestReplacement, validateCrew, weightedPick, wholeDay, type Assignment, type Candidate, type Role } from '../lib/service.ts';
+import { MISSING_DT_ERROR, assembleCrew, eligibility, fromLocalDateTimeInput, intervalsOverlap, medicalValidUntil, planningServiceWeek, replacementCandidates, serviceWeek, suggestReplacement, validateCrew, weightedPick, wholeDay, type Assignment, type Candidate, type Role } from '../lib/service.ts';
 import { constantTimeEqual } from '../lib/secure-compare.ts';
 
 const base=(id:string,roles:Role[],dt=false):Candidate=>({id,name:id,active:true,system:false,reserveOnly:false,dt,medicalExam:new Date(2026,6,1),roles,serviceCount:0,lastService:null});
@@ -9,6 +9,7 @@ test('zdravotní prohlídka platí přesně dva roky',()=>assert.equal(medicalVa
 test('týden začíná v pondělí 06:00 a končí v neděli 06:00 pražského času',()=>{const w=serviceWeek(new Date('2026-09-09T10:00:00Z'));assert.deepEqual(w,week);});
 test('intervaly na společné hranici se nepřekrývají',()=>assert.equal(intervalsOverlap(new Date(0),new Date(10),new Date(10),new Date(20)),false));
 test('propadlá zdravotní vyřadí člena',()=>{const m=base('a',['FIREFIGHTER']);m.medicalExam=new Date(2020,1,1);assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,false);});
+test('výběr používá zdravotní platnost uloženou u člena v databázi',()=>{const m=base('a',['FIREFIGHTER']);m.medicalExam=null;m.medicalValidUntil=new Date('2027-01-01T00:00:00Z');assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,true);});
 test('pouze na počet není automaticky losován',()=>{const m=base('a',['FIREFIGHTER']);m.reserveOnly=true;assert.ok(eligibility(m,'FIREFIGHTER',week.start,week.end).reasons.includes('pouze na počet'));});
 test('systémový účet není losován',()=>{const m=base('a',['FIREFIGHTER']);m.system=true;assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,false);});
 test('překrývající nedostupnost vyřadí člena',()=>{const m=base('a',['FIREFIGHTER']);m.unavailable=[{from:new Date('2026-09-10'),to:new Date('2026-09-11')}];assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,false);});
@@ -24,6 +25,7 @@ test('backtracking uchová jediného velitele pro pozici velitele',()=>{const pe
 test('náhradní strojník nepotřebuje DT, pokud ji zajišťuje velitel',()=>{const assignments:Assignment[]=[['COMMANDER',base('v',['COMMANDER'],true)],['DRIVER',base('s',['DRIVER'])],['FIREFIGHTER',base('h1',['FIREFIGHTER'])],['FIREFIGHTER',base('h2',['FIREFIGHTER'])]].map(([role,member])=>({role:role as Role,member:member as Candidate,mode:'AUTO'}));const replacement=base('ns',['DRIVER'],false);assert.deepEqual(replacementCandidates(assignments,1,[replacement],week.start,week.end).map(member=>member.id),['ns']);});
 test('náhradní velitel musí mít DT, pokud v sestavě žádný jiný není',()=>{const assignments:Assignment[]=[['COMMANDER',base('v',['COMMANDER'],true)],['DRIVER',base('s',['DRIVER'])],['FIREFIGHTER',base('h1',['FIREFIGHTER'])],['FIREFIGHTER',base('h2',['FIREFIGHTER'])]].map(([role,member])=>({role:role as Role,member:member as Candidate,mode:'AUTO'}));const without=base('nv-bez',['COMMANDER'],false),withDt=base('nv-dt',['COMMANDER'],true);assert.deepEqual(replacementCandidates(assignments,0,[without,withDt],week.start,week.end).map(member=>member.id),['nv-dt']);assert.equal(suggestReplacement(assignments,0,[without],week.start,week.end).error,MISSING_DT_ERROR);});
 test('pražský interval služby respektuje zimní i letní čas',()=>{assert.equal(serviceWeek(new Date('2026-01-07T12:00:00Z')).start.toISOString(),'2026-01-05T05:00:00.000Z');assert.equal(serviceWeek(new Date('2026-07-08T12:00:00Z')).start.toISOString(),'2026-07-06T04:00:00.000Z');});
+test('po skončení nedělní služby se plánuje následující týden',()=>{assert.equal(planningServiceWeek(new Date('2026-09-06T10:00:00Z')).start.toISOString(),'2026-09-07T04:00:00.000Z');});
 test('celý den přes přechod na letní čas končí následující půlnocí',()=>{const range=wholeDay(new Date('2026-03-29T10:00:00Z'));assert.equal(range.start.toISOString(),'2026-03-28T23:00:00.000Z');assert.equal(range.end.toISOString(),'2026-03-29T22:00:00.000Z');});
 test('weighted random vrátí kandidáta',()=>assert.equal(weightedPick([base('a',['FIREFIGHTER'])],()=>.5).id,'a'));
 test('ruční neplatná změna je znovu odmítnuta validací',()=>assert.equal(validateCrew([]).valid,false));

@@ -12,6 +12,8 @@ Nedostupnost se eviduje včetně přesného času. Lze zvolit celý den, aktuál
 
 Požadavek na nositele dýchací techniky se kontroluje pro celou čtyřčlennou posádku. Náhradník nemusí mít DT, pokud výsledná sestava stále splňuje hodnotu `Settings.minimumDt` (výchozí hodnota je `1`).
 
+Tlačítko **Navrhnout posádku** na stránce Týdenní služba načítá členy, oprávnění, zdravotní platnost, přesné nedostupnosti a historii služeb přímo z PostgreSQL. Návrh ukládá jako `DRAFT`; při potvrzení se všechna pravidla znovu kontrolují nad aktuálními databázovými údaji.
+
 ## Požadavky
 
 - Node.js 22 LTS nebo 24
