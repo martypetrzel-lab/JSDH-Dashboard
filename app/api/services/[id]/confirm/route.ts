@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdminApi } from '@/lib/auth';
 import { getPrisma } from '@/lib/prisma';
-import { DEFAULT_SERVICE_SETTINGS, validateServiceForConfirmation, type Assignment, type Candidate, type Role } from '@/lib/service';
+import { DEFAULT_SERVICE_SETTINGS, validateBaseCrewForCoverage, type Assignment, type Candidate, type Role } from '@/lib/service';
 import { serializeWeeklyService } from '@/lib/weekly-service-data';
 import { syncServiceReplacements } from '@/lib/service-replacements-server';
 
@@ -18,7 +18,7 @@ export async function POST(_request:Request,context:{params:Promise<{id:string}>
     if(!service)return NextResponse.json({error:'Služba nebyla nalezena.'},{status:404});
     const minimumDt=settings?.minimumDt??DEFAULT_SERVICE_SETTINGS.minimumDt;
     const assignments:Assignment[]=service.assignments.map(item=>{const member=item.member;const candidate:Candidate={id:member.id,name:`${member.firstName} ${member.lastName==='—'?'':member.lastName}`.trim(),active:member.active,system:member.systemAccount,reserveOnly:member.reserveOnly,dt:member.dt,medicalExam:member.medicalExamAt,medicalValidUntil:member.medicalValidUntil,roles:[member.canCommand&&'COMMANDER',member.canDrive&&'DRIVER',member.canFight&&'FIREFIGHTER'].filter(Boolean) as Role[],serviceCount:0,lastService:null,unavailable:member.unavailability.map(unavailable=>({from:unavailable.from,to:unavailable.to}))};return{role:item.role as Role,member:candidate,mode:item.selectionMode};});
-    const validation=validateServiceForConfirmation(assignments,service.weekStart,service.weekEnd,minimumDt);
+    const validation=validateBaseCrewForCoverage(assignments,service.weekStart,service.weekEnd,minimumDt);
     if(!validation.valid)return NextResponse.json({error:validation.errors.join('\n')},{status:422});
     const replacements=await syncServiceReplacements(id),missing=replacements.filter(item=>!item.valid);
     if(missing.length)return NextResponse.json({error:missing.map(item=>`${item.from.toISOString()} – ${item.issue}`).join('\n')},{status:422});

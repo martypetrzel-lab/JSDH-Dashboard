@@ -51,7 +51,7 @@ import type {
 } from "@/lib/weekly-service-data";
 import {
   buildMonthlyWhatsAppMessage,
-  createWhatsAppShareUrl,
+  shareWhatsAppMessage,
 } from "@/lib/whatsapp";
 
 type Props = {
@@ -59,7 +59,12 @@ type Props = {
   members: MemberRow[];
   initialService: DashboardService | null;
   onServiceChange: (service: DashboardService | null) => void;
-  onShare: (service: DashboardService, updated?: boolean, copy?: boolean) => void;
+  onShare: (
+    service: DashboardService,
+    updated?: boolean,
+    copy?: boolean,
+    preview?: boolean,
+  ) => void;
   notify: (message: string) => void;
 };
 type Interval = { from: string; to: string };
@@ -79,6 +84,7 @@ type ReplacementInput = {
   to: string;
   reason: string;
 };
+type FutureActionKind = "DELETE_FROM" | "REGENERATE_FROM" | "REGENERATE_MONTH";
 
 const monthValue = (date = new Date(), timeZone = "Europe/Prague") =>
   new Intl.DateTimeFormat("en-CA", {
@@ -124,6 +130,13 @@ export function WeeklyPlanningModule({
     new Set(),
   );
   const [manualAfterGenerate, setManualAfterGenerate] = useState(false);
+  const [futureAction, setFutureAction] = useState<{
+    kind: FutureActionKind;
+    service: DashboardService;
+  } | null>(null);
+  const [futureConfirmed, setFutureConfirmed] = useState(false);
+  const [futureRequiresConfirmation, setFutureRequiresConfirmation] =
+    useState(false);
   const memberOptions = useMemo(
     () => members.map((item) => ({ id: item[5], name: item[0] })),
     [members],
@@ -549,16 +562,56 @@ export function WeeklyPlanningModule({
         };
       }),
     );
-    window.open(
-      createWhatsAppShareUrl(message),
-      "_blank",
-      "noopener,noreferrer",
-    );
+    const result = shareWhatsAppMessage(message);
+    if (!result.ok) notify(result.error);
   };
   const openDetail = (item: DashboardService) => {
     setWeek({ from: item.from, to: item.to });
     publish(item);
     setMode("week");
+  };
+  const openFutureAction = (kind: FutureActionKind, item: DashboardService) => {
+    setFutureAction({ kind, service: item });
+    setFutureConfirmed(false);
+    setFutureRequiresConfirmation(item.status === "CONFIRMED");
+  };
+  const runFutureAction = async () => {
+    if (!futureAction) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/services/future", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: futureAction.kind,
+            from: futureAction.service.from,
+            month,
+            confirmedAcknowledged: futureConfirmed,
+          }),
+        }),
+        body = await response.json();
+      if (!response.ok) {
+        if (body.requiresConfirmedAcknowledgement)
+          setFutureRequiresConfirmation(true);
+        throw new Error(body.error);
+      }
+      setFutureAction(null);
+      notify(
+        futureAction.kind === "DELETE_FROM"
+          ? `Odstraněno ${body.deleted} budoucích služeb.`
+          : `Znovu vytvořeno ${body.regenerated} plně pokrytých služeb.`,
+      );
+      if (mode === "month") await loadMonth(month);
+      else await loadWeek(new Date(week.from));
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Budoucí služby se nepodařilo změnit.",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
   const cardProps = (item: DashboardService) => ({
     service: item,
@@ -577,6 +630,8 @@ export function WeeklyPlanningModule({
     onConfirm: () => void confirm(item),
     onShare: () => onShare(item, updatedConfirmed.has(item.id)),
     onCopy: () => onShare(item, updatedConfirmed.has(item.id), true),
+    onPreview: () => onShare(item, updatedConfirmed.has(item.id), false, true),
+    onFutureAction: (kind: FutureActionKind) => openFutureAction(kind, item),
     onRerollMember: (role: string, slot: number) =>
       void rerollMember(item, role, slot),
     onSaveCrew: (
@@ -588,6 +643,71 @@ export function WeeklyPlanningModule({
       void removeReplacement(item, replacement),
   });
   const interval = { start: new Date(week.from), end: new Date(week.to) };
+  const futureActionLabel =
+    futureAction?.kind === "DELETE_FROM"
+      ? "Smazat od tohoto týdne dál"
+      : futureAction?.kind === "REGENERATE_FROM"
+        ? "Přegenerovat od tohoto týdne"
+        : "Přegenerovat zbytek měsíce";
+  const futureDialog = (
+    <AlertDialog
+      open={!!futureAction}
+      onOpenChange={(open) => {
+        if (!open) setFutureAction(null);
+      }}
+    >
+      <AlertDialogContent className="service-delete-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{futureActionLabel}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Změna začne týdnem{" "}
+            {futureAction
+              ? formatServiceDateTime(
+                  new Date(futureAction.service.from),
+                  settings.timezone,
+                )
+              : ""}
+            . Historie před tímto týdnem zůstane zachována.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="service-delete-copy">
+          <p>
+            {futureAction?.kind === "DELETE_FROM"
+              ? "Budoucí sestavy budou odstraněny. Tuto akci nelze vrátit zpět."
+              : "Dotčené budoucí sestavy budou odstraněny a znovu vypočteny z aktuálních členů, oprávnění, zdravotních prohlídek, dostupností, DT a historie."}
+          </p>
+          {futureRequiresConfirmation && (
+            <>
+              <b>Součástí výběru jsou již potvrzené služby.</b>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={futureConfirmed}
+                  onChange={(event) => setFutureConfirmed(event.target.checked)}
+                />{" "}
+                {futureAction?.kind === "DELETE_FROM"
+                  ? "Rozumím, že budou odstraněny také již potvrzené služby."
+                  : "Rozumím, že budou odstraněny a vytvořeny znovu také již potvrzené služby."}
+              </label>
+            </>
+          )}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Zrušit</AlertDialogCancel>
+          <AlertDialogAction
+            className="danger-button"
+            disabled={busy || (futureRequiresConfirmation && !futureConfirmed)}
+            onClick={(event) => {
+              event.preventDefault();
+              void runFutureAction();
+            }}
+          >
+            {futureActionLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
   if (mode === "month")
     return (
@@ -623,6 +743,9 @@ export function WeeklyPlanningModule({
             const item = monthServices.find(
               (candidate) => candidate.from === intervalItem.from,
             );
+            const coverageError = monthErrors.find(
+              (candidate) => candidate.from === intervalItem.from,
+            );
             return item ? (
               <WeekCard key={intervalItem.from} {...cardProps(item)} />
             ) : (
@@ -642,7 +765,10 @@ export function WeeklyPlanningModule({
                       settings.timezone,
                     )}
                   </strong>
-                  <span>Nenaplánovaný týden</span>
+                  <span>
+                    {coverageError ? "Nelze pokrýt" : "Nenaplánovaný týden"}
+                  </span>
+                  {coverageError && <small>{coverageError.error}</small>}
                 </div>
                 <Button
                   disabled={busy}
@@ -668,6 +794,7 @@ export function WeeklyPlanningModule({
             Potvrdit všechny platné služby
           </Button>
         </div>
+        {futureDialog}
         <MonthDialog
           open={monthDialog}
           onOpenChange={setMonthDialog}
@@ -757,6 +884,7 @@ export function WeeklyPlanningModule({
           </div>
         </article>
       )}
+      {futureDialog}
       <MonthDialog
         open={monthDialog}
         onOpenChange={setMonthDialog}
@@ -783,6 +911,8 @@ type WeekCardProps = {
   onConfirm: () => void;
   onShare: () => void;
   onCopy: () => void;
+  onPreview: () => void;
+  onFutureAction: (kind: FutureActionKind) => void;
   onRerollMember: (role: string, slot: number) => void;
   onSaveCrew: (
     assignments: { role: string; slot: number; memberId: string }[],
@@ -808,6 +938,8 @@ function WeekCard({
   onConfirm,
   onShare,
   onCopy,
+  onPreview,
+  onFutureAction,
   onRerollMember,
   onSaveCrew,
   onSaveReplacement,
@@ -1156,7 +1288,7 @@ function WeekCard({
             <div className="validation-box">
               <Check size={18} />
               <div>
-                <strong>Posádka splňuje pravidla</strong>
+                <strong>Celý týden je pokryt.</strong>
                 <span>
                   4 různé osoby · role 1+1+2 · oprávnění · zdraví · dostupnost ·
                   minimálně {settings.minimumDt} DT
@@ -1224,12 +1356,13 @@ function WeekCard({
                     <>
                       <Button variant="outline" onClick={onShare}>
                         <Share2 size={14} />{" "}
-                        {updated
-                          ? "Sdílet aktualizaci"
-                          : "Sdílet tento týden"}
+                        {updated ? "Sdílet aktualizaci" : "Sdílet tento týden"}
                       </Button>
                       <Button variant="outline" onClick={onCopy}>
                         <Copy size={14} /> Kopírovat zprávu
+                      </Button>
+                      <Button variant="outline" onClick={onPreview}>
+                        Náhled zprávy
                       </Button>
                     </>
                   )}
@@ -1252,8 +1385,35 @@ function WeekCard({
                         setDeleteOpen(true);
                       }}
                     >
-                      <Trash2 size={14} /> Smazat službu
+                      <Trash2 size={14} /> Smazat tento týden
                     </Button>
+                  )}
+                  {(service.status === "DRAFT" ||
+                    service.status === "CONFIRMED") && (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="delete-action"
+                        disabled={busy}
+                        onClick={() => onFutureAction("DELETE_FROM")}
+                      >
+                        Smazat od tohoto týdne dál
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => onFutureAction("REGENERATE_FROM")}
+                      >
+                        <RefreshCw size={14} /> Přegenerovat od tohoto týdne
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => onFutureAction("REGENERATE_MONTH")}
+                      >
+                        <CalendarDays size={14} /> Přegenerovat zbytek měsíce
+                      </Button>
+                    </>
                   )}
                   {service.status === "DRAFT" && (
                     <Button

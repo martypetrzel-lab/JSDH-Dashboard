@@ -63,9 +63,48 @@ function formatDue(value: string) {
   return `${day}.${month}.${year}`;
 }
 
-export function createWhatsAppShareUrl(message: string) {
-  const encoded = encodeURIComponent(message);
-  return `https://wa.me/?text=${encoded}`;
+const replacementCharacter = String.fromCodePoint(0xfffd);
+export const whatsappUnicodeError = 'Text zprávy obsahuje poškozené Unicode znaky.';
+
+export function hasDamagedUnicode(message: string) {
+  return message.includes(replacementCharacter);
+}
+
+export function createWhatsAppShareUrl(message: string, destination: 'desktop' | 'mobile' = 'desktop') {
+  const url = new URL(destination === 'desktop' ? 'https://web.whatsapp.com/send' : 'https://wa.me/');
+  url.searchParams.set('text', message);
+  return url.toString();
+}
+
+function diagnoseUnicode(message: string) {
+  if (process.env.NODE_ENV === 'development') {
+    console.table(Array.from(message).map((char) => ({ char, codePoint: char.codePointAt(0)?.toString(16) })));
+  }
+}
+
+export function shareWhatsAppMessage(message: string) {
+  if (hasDamagedUnicode(message)) {
+    diagnoseUnicode(message);
+    return { ok: false as const, error: whatsappUnicodeError };
+  }
+  const mobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const url = createWhatsAppShareUrl(message, mobile ? 'mobile' : 'desktop');
+  const decoded = new URL(url).searchParams.get('text');
+  if (decoded !== message) {
+    diagnoseUnicode(message);
+    return { ok: false as const, error: 'Text zprávy se při vytváření WhatsApp odkazu změnil.' };
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return { ok: true as const, url };
+}
+
+export async function copyWhatsAppMessage(message: string) {
+  if (hasDamagedUnicode(message)) {
+    diagnoseUnicode(message);
+    return { ok: false as const, error: whatsappUnicodeError };
+  }
+  await navigator.clipboard.writeText(message);
+  return { ok: true as const };
 }
 
 export function buildMonthlyWhatsAppMessage(monthLabel:string,services:{from:string;to:string;commander:string;driver:string;firefighters:[string,string]}[]){const lines=[`JSDH Nehvizdy – plán služeb ${monthLabel}`,''];for(const service of services){lines.push(`${service.from.slice(0,5)}–${service.to.slice(0,5)}`);lines.push(`V: ${service.commander}`);lines.push(`S: ${service.driver}`);lines.push(`H: ${service.firefighters[0]}`);lines.push(`H: ${service.firefighters[1]}`,'');}return lines.join('\n').trim();}
