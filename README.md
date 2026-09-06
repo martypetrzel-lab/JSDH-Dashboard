@@ -8,6 +8,10 @@ Na stránce **Členové** je dostupný hromadný import z Excelu, Google Sheets 
 
 Týdenní služba začíná v **pondělí v 06:00** a končí v **neděli v 06:00** v časovém pásmu `Europe/Prague`. Časové hranice se počítají v pražském pásmu včetně změn letního a zimního času. Intervaly nedostupnosti jsou polouzavřené: záznam končící přesně na začátku služby už tuto službu neblokuje.
 
+Nedostupnost se eviduje včetně přesného času. Lze zvolit celý den, aktuální či příští službu nebo vlastní interval. Jakýkoli překryv se službou vyřadí člena z automatického výběru pro celý daný týden.
+
+Požadavek na nositele dýchací techniky se kontroluje pro celou čtyřčlennou posádku. Náhradník nemusí mít DT, pokud výsledná sestava stále splňuje hodnotu `Settings.minimumDt` (výchozí hodnota je `1`).
+
 ## Požadavky
 
 - Node.js 22 LTS nebo 24

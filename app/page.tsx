@@ -8,10 +8,11 @@ export const dynamic = 'force-dynamic';
 export default async function Home() {
   const session = await requireAdmin();
   const prisma = getPrisma();
-  const [members, unavailability, template] = await Promise.all([
+  const [members, unavailability, template, settings] = await Promise.all([
     prisma.member.findMany({ where: { active: true, systemAccount: false }, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] }),
     prisma.unavailability.findMany({ include: { member: true }, orderBy: { from: 'asc' } }),
     prisma.medicalTemplate.findUnique({ where: { id: 'current' }, select: { filename: true } }),
+    prisma.settings.findUnique({ where: { id: 'default' }, select: { weekStartDay: true, weekStartHour: true, weekEndDay: true, weekEndHour: true, minimumDt: true, timezone: true } }),
   ]);
   const absences: AbsenceRow[] = unavailability.map((item) => ({
     id: item.id,
@@ -22,5 +23,5 @@ export default async function Home() {
     reason: item.reason ?? '',
     label: 'Evidováno',
   }));
-  return <ServiceApp adminName={session.username} initialMembers={members.map(serializeMember)} initialAbsences={absences} initialTemplateName={template?.filename ?? null} />;
+  return <ServiceApp adminName={session.username} initialMembers={members.map(serializeMember)} initialAbsences={absences} initialTemplateName={template?.filename ?? null} initialSettings={settings ?? undefined} />;
 }
