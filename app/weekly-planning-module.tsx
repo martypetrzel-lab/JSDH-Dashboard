@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Copy,
   Share2,
   Trash2,
   UserX,
@@ -58,7 +59,7 @@ type Props = {
   members: MemberRow[];
   initialService: DashboardService | null;
   onServiceChange: (service: DashboardService | null) => void;
-  onShare: (service: DashboardService, updated?: boolean) => void;
+  onShare: (service: DashboardService, updated?: boolean, copy?: boolean) => void;
   notify: (message: string) => void;
 };
 type Interval = { from: string; to: string };
@@ -575,6 +576,7 @@ export function WeeklyPlanningModule({
     onCancel: () => void cancelService(item),
     onConfirm: () => void confirm(item),
     onShare: () => onShare(item, updatedConfirmed.has(item.id)),
+    onCopy: () => onShare(item, updatedConfirmed.has(item.id), true),
     onRerollMember: (role: string, slot: number) =>
       void rerollMember(item, role, slot),
     onSaveCrew: (
@@ -780,6 +782,7 @@ type WeekCardProps = {
   onCancel: () => void;
   onConfirm: () => void;
   onShare: () => void;
+  onCopy: () => void;
   onRerollMember: (role: string, slot: number) => void;
   onSaveCrew: (
     assignments: { role: string; slot: number; memberId: string }[],
@@ -804,6 +807,7 @@ function WeekCard({
   onCancel,
   onConfirm,
   onShare,
+  onCopy,
   onRerollMember,
   onSaveCrew,
   onSaveReplacement,
@@ -1217,10 +1221,17 @@ function WeekCard({
                     <RefreshCw size={14} /> Přelosovat
                   </Button>
                   {service.status === "CONFIRMED" && (
-                    <Button variant="outline" onClick={onShare}>
-                      <Share2 size={14} />{" "}
-                      {updated ? "Sdílet aktualizaci" : "Sdílet"}
-                    </Button>
+                    <>
+                      <Button variant="outline" onClick={onShare}>
+                        <Share2 size={14} />{" "}
+                        {updated
+                          ? "Sdílet aktualizaci"
+                          : "Sdílet tento týden"}
+                      </Button>
+                      <Button variant="outline" onClick={onCopy}>
+                        <Copy size={14} /> Kopírovat zprávu
+                      </Button>
+                    </>
                   )}
                   <Button
                     variant="outline"

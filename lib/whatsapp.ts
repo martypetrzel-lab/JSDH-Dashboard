@@ -14,41 +14,44 @@ type WhatsAppCrew = {
   };
 };
 
-// Emoji jsou zapsané pomocí Unicode escape sekvencí. Zdrojový soubor tak
-// zůstává přenositelný i přes nástroje, které neumějí ukládat emoji v UTF-8.
-const ICON = {
-  engine: '\u{1F692}',
-  calendar: '\u{1F4C5}',
-  firefighter: '\u{1F468}\u{200D}\u{1F692}',
-  lungs: '\u{1FAC1}',
-  check: '\u{2705}',
+// Znaky vznikají až za běhu. Výsledek tak nezávisí na kódování zdrojového
+// souboru, editoru ani na převodu escape sekvencí během sestavení.
+const emoji = {
+  fireEngine: String.fromCodePoint(0x1f692),
+  calendar: String.fromCodePoint(0x1f4c5),
+  firefighter: String.fromCodePoint(0x1f468, 0x200d, 0x1f692),
+  lungs: String.fromCodePoint(0x1fac1),
+  check: String.fromCodePoint(0x2705),
+  warning: String.fromCodePoint(0x26a0, 0xfe0f),
+  replacement: String.fromCodePoint(0x1f504),
+  alert: String.fromCodePoint(0x1f6a8),
 };
 
 export function buildWhatsAppMessage(crew: WhatsAppCrew) {
   const lines = [
-    `${crew.updated?'\u{1F6A8} AKTUALIZACE TÝDENNÍ SLUŽBY':`${ICON.engine} JSDH NEHVIZDY – TÝDENNÍ SLUŽBA`}`,
+    `${crew.updated?`${emoji.alert} AKTUALIZACE TÝDENNÍ SLUŽBY`:`${emoji.fireEngine} JSDH NEHVIZDY – TÝDENNÍ SLUŽBA`}`,
     '',
-    `${ICON.calendar} ${crew.from} – ${crew.to}`,
+    `${emoji.calendar} ${crew.from} – ${crew.to}`,
     '',
-    `${ICON.firefighter} Velitel: ${crew.commander}`,
-    `${ICON.engine} Strojník: ${crew.driver}`,
-    `${ICON.firefighter} Hasič: ${crew.firefighters[0]}`,
-    `${ICON.firefighter} Hasič: ${crew.firefighters[1]}`,
+    `${emoji.firefighter} Velitel: ${crew.commander}`,
+    `${emoji.fireEngine} Strojník: ${crew.driver}`,
+    `${emoji.firefighter} Hasič: ${crew.firefighters[0]}`,
+    `${emoji.firefighter} Hasič: ${crew.firefighters[1]}`,
     '',
-    `${ICON.lungs} DT: ${crew.dt.join(', ')}`,
+    `${emoji.lungs} DT: ${crew.dt.join(', ')}`,
     '',
-    `${ICON.check} Posádka 3+1 potvrzena.`,
+    `${emoji.check} Posádka 3+1 potvrzena.`,
   ];
-  if(crew.replacements?.length){lines.push('','\u{1F504} ZÁSKOKY');let current='';for(const item of crew.replacements){if(item.originalName!==current){lines.push('',`${item.originalName}:`);current=item.originalName}lines.push(`${item.from}–${item.to} → ${item.replacementName}`)}}
+  if(crew.replacements?.length){lines.push('',`${emoji.replacement} ZÁSKOKY`);let current='';for(const item of crew.replacements){if(item.originalName!==current){lines.push('',`${item.originalName}:`);current=item.originalName}lines.push(`${item.from}–${item.to} → ${item.replacementName}`)}}
   if (crew.obligations) {
-    lines.push('', '\u{26A0}\u{FE0F} POVINNOSTI');
-    if (!crew.obligations.dt.length && !crew.obligations.drivers.length) lines.push('', `${ICON.check} Kondiční povinnosti jsou aktuálně splněny.`);
+    lines.push('', `${emoji.warning} POVINNOSTI`);
+    if (!crew.obligations.dt.length && !crew.obligations.drivers.length) lines.push('', `${emoji.check} Kondiční povinnosti jsou aktuálně splněny.`);
     if (crew.obligations.dt.length) {
-      lines.push('', `${ICON.lungs} DT:`);
+      lines.push('', `${emoji.lungs} DT:`);
       for (const item of crew.obligations.dt) lines.push(`${item.name} – ${item.due ? item.overdue ? `PO TERMÍNU od ${formatDue(item.due)}` : `prodýchání do ${formatDue(item.due)}` : 'bez záznamu'}`);
     }
     if (crew.obligations.drivers.length) {
-      lines.push('', `${ICON.engine} Kondiční jízdy – ${crew.obligations.monthLabel}:`);
+      lines.push('', `${emoji.fireEngine} Kondiční jízdy – ${crew.obligations.monthLabel}:`);
       for (const item of crew.obligations.drivers) lines.push(`${item.name} – chybí`);
     }
   }
@@ -61,7 +64,8 @@ function formatDue(value: string) {
 }
 
 export function createWhatsAppShareUrl(message: string) {
-  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  const encoded = encodeURIComponent(message);
+  return `https://wa.me/?text=${encoded}`;
 }
 
 export function buildMonthlyWhatsAppMessage(monthLabel:string,services:{from:string;to:string;commander:string;driver:string;firefighters:[string,string]}[]){const lines=[`JSDH Nehvizdy – plán služeb ${monthLabel}`,''];for(const service of services){lines.push(`${service.from.slice(0,5)}–${service.to.slice(0,5)}`);lines.push(`V: ${service.commander}`);lines.push(`S: ${service.driver}`);lines.push(`H: ${service.firefighters[0]}`);lines.push(`H: ${service.firefighters[1]}`,'');}return lines.join('\n').trim();}
