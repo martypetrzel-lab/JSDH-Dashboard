@@ -448,6 +448,12 @@ export function eligibility(
     reasons.push("nahlášená nedostupnost");
   return { eligible: reasons.length === 0, reasons };
 }
+export function replacementIntervalWarnings(member: Candidate, from: Date, to: Date) {
+  const warnings: string[] = [];
+  if (member.unavailable?.some((period) => intervalsOverlap(period.from, period.to, from, to))) warnings.push("Nahlášená nedostupnost");
+  if (member.recurringUnavailable?.some((rule) => recurringOccurrences(rule, from, to).length > 0)) warnings.push("Pracovní směna 24/48 v tomto intervalu");
+  return warnings;
+}
 export function weightedPick(candidates: Candidate[], random = Math.random) {
   const weights = candidates.map(
     (candidate) =>

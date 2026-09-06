@@ -25,6 +25,7 @@ import {
   recurringOccurrences,
   removeServiceFromPlan,
   replacementCandidates,
+  replacementIntervalWarnings,
   replacementStatistics,
   serviceDeletionAuditDescription,
   serviceOperationalState,
@@ -541,11 +542,20 @@ test("kandidát záskoku se validuje jen pro konkrétní interval, ne celý týd
   assert.ok(replacementCandidates(assignments,3,[candidate],new Date("2026-09-08T04:00:00Z"),new Date("2026-09-09T04:00:00Z"),1).some((item)=>item.id===candidate.id));
   assert.equal(replacementCandidates(assignments,3,[candidate],new Date("2026-09-11T04:00:00Z"),new Date("2026-09-12T04:00:00Z"),1).length,0);
 });
+test("Jan Poppel není blokovaný nedostupností, která začne až po záskoku",()=>{
+  const jan=base("jan-poppel",["FIREFIGHTER"]);jan.name="Jan Poppel";jan.unavailable=[{from:new Date("2026-08-14T00:00:00Z"),to:new Date("2026-08-20T00:00:00Z")}];
+  const warnings=replacementIntervalWarnings(jan,new Date("2026-08-07T04:00:00Z"),new Date("2026-08-09T21:59:00Z"));
+  assert.equal(warnings.includes("Nahlášená nedostupnost"),false);
+});
+test("Jan Poppel je blokovaný pouze při skutečném překryvu záskoku",()=>{
+  const jan=base("jan-poppel",["FIREFIGHTER"]);jan.name="Jan Poppel";jan.unavailable=[{from:new Date("2026-08-08T10:00:00Z"),to:new Date("2026-08-09T10:00:00Z")}];
+  assert.deepEqual(replacementIntervalWarnings(jan,new Date("2026-08-07T04:00:00Z"),new Date("2026-08-09T21:59:00Z")),["Nahlášená nedostupnost"]);
+});
 
 test("API a dialog podporují automatickou i ruční volbu náhradníka",()=>{
   const create=readFileSync("app/api/services/[id]/replacements/route.ts","utf8"),edit=readFileSync("app/api/services/[id]/replacements/[replacementId]/route.ts","utf8"),helper=readFileSync("lib/emergency-replacement-server.ts","utf8"),ui=readFileSync("app/weekly-planning-module.tsx","utf8");
   assert.match(create,/replacementMemberId/);assert.match(edit,/replacementMemberId/);assert.match(edit,/TEMP_REPLACEMENT_CHANGED/);
-  assert.match(helper,/requestedMemberId/);assert.match(helper,/recurringOccurrences\(rule, from, to\)/);assert.match(helper,/busyIds/);
+  assert.match(helper,/requestedMemberId/);assert.match(helper,/replacementIntervalWarnings\(candidate, from, to\)/);assert.match(helper,/busyIds/);
   assert.match(ui,/Automaticky vybrat/);assert.match(ui,/replacement-candidates/);assert.match(ui,/Upravit dočasnou sestavu/);
 });
 test("DT náhradníka závisí na celé výsledné čtveřici", () => {
