@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { assembleCrew, eligibility, intervalsOverlap, medicalValidUntil, serviceWeek, validateCrew, weightedPick, type Assignment, type Candidate, type Role } from '../lib/service.ts';
+
+const base=(id:string,roles:Role[],dt=false):Candidate=>({id,name:id,active:true,system:false,reserveOnly:false,dt,medicalExam:new Date(2026,6,1),roles,serviceCount:0,lastService:null});
+const week={start:new Date('2026-09-07T04:00:00.000Z'),end:new Date('2026-09-13T04:00:00.000Z')};
+test('zdravotní prohlídka platí přesně dva roky',()=>assert.equal(medicalValidUntil(new Date(2026,6,21))?.getFullYear(),2028));
+test('týden začíná v pondělí 06:00 a končí v neděli 06:00 pražského času',()=>{const w=serviceWeek(new Date('2026-09-09T10:00:00Z'));assert.deepEqual(w,week);});
+test('intervaly na společné hranici se nepřekrývají',()=>assert.equal(intervalsOverlap(new Date(0),new Date(10),new Date(10),new Date(20)),false));
+test('propadlá zdravotní vyřadí člena',()=>{const m=base('a',['FIREFIGHTER']);m.medicalExam=new Date(2020,1,1);assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,false);});
+test('pouze na počet není automaticky losován',()=>{const m=base('a',['FIREFIGHTER']);m.reserveOnly=true;assert.ok(eligibility(m,'FIREFIGHTER',week.start,week.end).reasons.includes('pouze na počet'));});
+test('systémový účet není losován',()=>{const m=base('a',['FIREFIGHTER']);m.system=true;assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,false);});
+test('překrývající nedostupnost vyřadí člena',()=>{const m=base('a',['FIREFIGHTER']);m.unavailable=[{from:new Date('2026-09-10'),to:new Date('2026-09-11')}];assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,false);});
+test('nedostupnost mimo týden člena nevyřadí',()=>{const m=base('a',['FIREFIGHTER']);m.unavailable=[{from:new Date('2026-09-14'),to:new Date('2026-09-15')}];assert.equal(eligibility(m,'FIREFIGHTER',week.start,week.end).eligible,true);});
+for(const [role,other] of [['COMMANDER','DRIVER'],['DRIVER','FIREFIGHTER'],['FIREFIGHTER','COMMANDER']] as [Role,Role][])test(`${role} vyžaduje správné oprávnění`,()=>assert.equal(eligibility(base('a',[other]),role,week.start,week.end).eligible,false));
+test('stejná osoba nesmí být dvakrát',()=>{const m=base('a',['COMMANDER','DRIVER','FIREFIGHTER'],true);const a:Assignment[]=[{role:'COMMANDER',member:m,mode:'AUTO'},{role:'DRIVER',member:m,mode:'AUTO'},{role:'FIREFIGHTER',member:m,mode:'AUTO'},{role:'FIREFIGHTER',member:m,mode:'AUTO'}];assert.equal(validateCrew(a).valid,false);});
+test('posádka má přesně 4 osoby, 1 velitele, 1 strojníka, 2 hasiče a DT',()=>{const a:Assignment[]=[['COMMANDER',base('v',['COMMANDER'],true)],['DRIVER',base('s',['DRIVER'])],['FIREFIGHTER',base('h1',['FIREFIGHTER'])],['FIREFIGHTER',base('h2',['FIREFIGHTER'])]].map(([role,member])=>({role:role as Role,member:member as Candidate,mode:'AUTO'}));assert.equal(validateCrew(a).valid,true);});
+test('bez DT nelze posádku potvrdit',()=>{const a:Assignment[]=[['COMMANDER',base('v',['COMMANDER'])],['DRIVER',base('s',['DRIVER'])],['FIREFIGHTER',base('h1',['FIREFIGHTER'])],['FIREFIGHTER',base('h2',['FIREFIGHTER'])]].map(([role,member])=>({role:role as Role,member:member as Candidate,mode:'AUTO'}));assert.ok(validateCrew(a).errors.some(e=>e.includes('DT')));});
+test('backtracking uchová jediného velitele pro pozici velitele',()=>{const people=[base('kriticky',['COMMANDER','FIREFIGHTER'],true),base('s',['DRIVER']),base('h1',['FIREFIGHTER']),base('h2',['FIREFIGHTER'])];const result=assembleCrew(people,week.start,week.end,()=>.4);assert.equal(result?.find(a=>a.role==='COMMANDER')?.member.id,'kriticky');});
+test('weighted random vrátí kandidáta',()=>assert.equal(weightedPick([base('a',['FIREFIGHTER'])],()=>.5).id,'a'));
+test('ruční neplatná změna je znovu odmítnuta validací',()=>assert.equal(validateCrew([]).valid,false));
