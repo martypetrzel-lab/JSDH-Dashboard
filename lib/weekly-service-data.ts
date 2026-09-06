@@ -20,6 +20,8 @@ export type DashboardService = {
   from: string;
   to: string;
   cancellationReason: string | null;
+  needsCrewChange: boolean;
+  crewIssue: string | null;
   crew: {
     assignmentId: string;
     memberId: string;
@@ -39,6 +41,8 @@ type SerializableService = {
   weekStart: Date;
   weekEnd: Date;
   cancellationReason?: string | null;
+  needsCrewChange?: boolean;
+  crewIssue?: string | null;
   assignments: { id: string; memberId: string; role: string; slot: number; nameSnapshot: string; dtSnapshot: boolean }[];
   replacements?: {
     id: string;
@@ -67,6 +71,8 @@ export function serializeWeeklyService(service: SerializableService): DashboardS
     from: service.weekStart.toISOString(),
     to: service.weekEnd.toISOString(),
     cancellationReason: service.cancellationReason ?? null,
+    needsCrewChange: service.needsCrewChange ?? false,
+    crewIssue: service.crewIssue ?? null,
     crew: service.assignments.map((assignment) => ({
       assignmentId: assignment.id,
       memberId: assignment.memberId,

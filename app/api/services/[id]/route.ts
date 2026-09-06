@@ -17,6 +17,7 @@ import {
 } from "@/lib/service";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
 import { toPlanningCandidates } from "@/lib/service-candidates";
+import { refreshHardUnavailabilityForMembers } from "@/lib/service-availability-server";
 
 export const runtime = "nodejs";
 const patchSchema = z.object({
@@ -185,6 +186,10 @@ export async function PATCH(
         },
       }),
     ]);
+    await refreshHardUnavailabilityForMembers([
+      ...service.assignments.map((item) => item.memberId),
+      member.id,
+    ]);
     const updated = await prisma.weeklyService.findUniqueOrThrow({
       where: { id },
       include: { assignments: { orderBy: [{ role: "asc" }, { slot: "asc" }] } },
@@ -317,7 +322,7 @@ export async function PUT(
           item.role,
           service.weekStart,
           service.weekEnd,
-          true,
+          false,
         ).reasons;
         return errors;
       });
@@ -395,6 +400,10 @@ export async function PUT(
           })),
         });
     });
+    await refreshHardUnavailabilityForMembers([
+      ...service.assignments.map((item) => item.memberId),
+      ...proposed.map((item) => item.member.id),
+    ]);
     const updated = await prisma.weeklyService.findUniqueOrThrow({
       where: { id },
       include: {

@@ -149,7 +149,7 @@ export async function POST(request: Request) {
       const service = existing
         ? await tx.weeklyService.update({
             where: { id: existing.id },
-            data: { weekEnd: interval.end },
+            data: { weekEnd: interval.end, needsCrewChange: false, crewIssue: null },
           })
         : await tx.weeklyService.create({
             data: {

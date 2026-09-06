@@ -1039,7 +1039,7 @@ function WeekCard({
     ),
     duplicate = new Set(ids).size !== ids.length,
     dtCount = ids.filter((id) => knownDt[id]).length,
-    invalid = duplicate || dtCount < settings.minimumDt;
+    invalid = duplicate || dtCount < settings.minimumDt || service.needsCrewChange;
   const crewValid =
     service.crew.length === 4 &&
     new Set(service.crew.map((item) => item.memberId)).size === 4 &&
@@ -1048,6 +1048,7 @@ function WeekCard({
     service.status,
     crewValid,
     service.replacements,
+    service.needsCrewChange,
   );
   const timeline = serviceTimeline(
     new Date(service.from),
@@ -1142,6 +1143,16 @@ function WeekCard({
             Důvod zrušení: {service.cancellationReason}
           </div>
         )}
+        {service.status !== "CANCELLED" && service.needsCrewChange && (
+          <div className="planning-error crew-change-required">
+            <strong>Vyžaduje změnu sestavy</strong>
+            <span>{service.crewIssue ?? "Člen základní sestavy je v tomto týdnu nedostupný."}</span>
+            <span className="record-actions">
+              <Button variant="outline" size="sm" onClick={startEdit}>Nahradit člena</Button>
+              <Button variant="outline" size="sm" disabled={busy} onClick={onReroll}>Přegenerovat tento týden</Button>
+            </span>
+          </div>
+        )}
         <div className="crew-list">
           {service.crew.map((member, index) => {
             const selectedId =
@@ -1212,6 +1223,11 @@ function WeekCard({
                     {replacements.map((item) => (
                       <div key={item.id}>
                         <span>
+                          <Badge variant="outline">
+                            {item.source === "RECURRING"
+                              ? "Pracovní směna 24/48 · časový záskok"
+                              : "Časový záskok"}
+                          </Badge>
                           {formatServiceDateTime(
                             new Date(item.from),
                             settings.timezone,
@@ -1265,7 +1281,9 @@ function WeekCard({
               <div>
                 <strong>Posádku zatím nelze uložit</strong>
                 <span>
-                  {duplicate
+                  {service.needsCrewChange
+                    ? service.crewIssue ?? "Člen základní sestavy je nedostupný."
+                    : duplicate
                     ? "Stejná osoba je vybrána vícekrát."
                     : `Posádka nemá požadovaný počet ${settings.minimumDt} DT.`}
                 </span>

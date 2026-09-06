@@ -156,9 +156,12 @@ export function serviceOperationalState(
   status: "DRAFT" | "CONFIRMED" | "CANCELLED",
   crewValid: boolean,
   replacements: { valid: boolean }[],
+  needsCrewChange = false,
 ) {
   if (status === "CANCELLED")
     return { kind: "cancelled" as const, label: "Zrušena" };
+  if (needsCrewChange)
+    return { kind: "invalid" as const, label: "Vyžaduje změnu sestavy" };
   if (!crewValid)
     return { kind: "invalid" as const, label: "Neplatná sestava" };
   if (replacements.some((item) => !item.valid))
@@ -370,6 +373,18 @@ export const intervalsOverlap = (
   bStart: Date,
   bEnd: Date,
 ) => aStart < bEnd && bStart < aEnd;
+export function hardUnavailabilityIssue(
+  members: { name: string; unavailable?: { from: Date; to: Date }[] }[],
+  start: Date,
+  end: Date,
+) {
+  const member = members.find((item) =>
+    item.unavailable?.some((absence) =>
+      intervalsOverlap(absence.from, absence.to, start, end),
+    ),
+  );
+  return member ? `Člen ${member.name} je v tomto týdnu nedostupný.` : null;
+}
 export const medicalValidUntil = (exam: Date | null) =>
   exam
     ? new Date(
@@ -484,7 +499,7 @@ export function validateServiceForConfirmation(
     errors = [...new Set([...eligibilityErrors, ...crew.errors])];
   return { valid: errors.length === 0, errors };
 }
-export function validateBaseCrewForCoverage(assignments:Assignment[],start:Date,end:Date,minimumDt=1){const eligibilityErrors=assignments.flatMap(assignment=>eligibility({...assignment.member,unavailable:[]},assignment.role,start,end,assignment.mode==='MANUAL').reasons),crew=validateCrew(assignments,minimumDt),errors=[...new Set([...eligibilityErrors,...crew.errors])];return{valid:errors.length===0,errors};}
+export function validateBaseCrewForCoverage(assignments:Assignment[],start:Date,end:Date,minimumDt=1){const eligibilityErrors=assignments.flatMap(assignment=>eligibility(assignment.member,assignment.role,start,end,assignment.mode==='MANUAL').reasons),crew=validateCrew(assignments,minimumDt),errors=[...new Set([...eligibilityErrors,...crew.errors])];return{valid:errors.length===0,errors};}
 export const shouldCreateMonthDraft = (
   status: "DRAFT" | "CONFIRMED" | "CANCELLED" | null,
 ) => status === null;
@@ -839,17 +854,10 @@ function candidateUnavailable(member: Candidate, from: Date, to: Date) {
     )
   );
 }
-function memberOutages(member: Candidate, start: Date, end: Date) {
-  const direct = (member.unavailable ?? [])
-      .filter((item) => intervalsOverlap(item.from, item.to, start, end))
-      .map((item) => ({
-        from: new Date(Math.max(start.getTime(), item.from.getTime())),
-        to: new Date(Math.min(end.getTime(), item.to.getTime())),
-      })),
-    recurring = (member.recurringUnavailable ?? []).flatMap((rule) =>
-      recurringOccurrences(rule, start, end),
-    );
-  return [...direct, ...recurring];
+function memberRecurringOutages(member: Candidate, start: Date, end: Date) {
+  return (member.recurringUnavailable ?? []).flatMap((rule) =>
+    recurringOccurrences(rule, start, end),
+  );
 }
 
 export function planCoveredSegments(
@@ -866,7 +874,7 @@ export function planCoveredSegments(
   const outages = new Map(
     baseAssignments.map((item) => [
       item.assignmentId,
-      memberOutages(item.member, start, end),
+      memberRecurringOutages(item.member, start, end),
     ]),
   );
   const boundaries = [
@@ -1050,8 +1058,7 @@ export function solveCoveredWeek(
         candidates.filter(
           (candidate) =>
             !used.has(candidate.id) &&
-            eligibility({ ...candidate, unavailable: [] }, role, start, end)
-              .eligible,
+            eligibility(candidate, role, start, end).eligible,
         ),
         role,
         fairness,

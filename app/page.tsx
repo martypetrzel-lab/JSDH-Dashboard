@@ -27,7 +27,7 @@ export default async function Home() {
     from: item.from.toISOString(),
     to: item.to.toISOString(),
     reason: item.reason ?? '',
-    label: 'Evidováno',
+    label: 'Nedostupnost',
   }));
   const service=currentService?serializeWeeklyService(currentService):null;
   const recurringAbsences:RecurringAbsenceRow[]=recurringUnavailability.map(item=>({id:item.id,memberId:item.memberId,member:`${item.member.firstName} ${item.member.lastName==='—'?'':item.member.lastName}`.trim(),anchorStart:item.anchorStart.toISOString(),durationMinutes:item.durationMinutes,intervalMinutes:item.intervalMinutes,reason:item.reason??''}));

@@ -12,6 +12,7 @@ import {
   emergencyReplacementEnd,
   fromLocalDateTimeInput,
   futureRangeNeedsConfirmation,
+  hardUnavailabilityIssue,
   intervalsOverlap,
   manualSelectionModes,
   medicalValidUntil,
@@ -147,6 +148,23 @@ test("překryv pouze části dne blokuje celý týdenní výběr", () => {
     eligibility(m, "FIREFIGHTER", week.start, week.end).eligible,
     false,
   );
+});
+test("AUTO sestava vybere jiného člena a pro běžnou nedostupnost nevytvoří záskok", () => {
+  const unavailable = base("h-nedostupny", ["FIREFIGHTER"]);
+  unavailable.unavailable = [{
+    from: new Date("2026-09-10T06:00:00Z"),
+    to: new Date("2026-09-10T16:00:00Z"),
+  }];
+  const result = solveCoveredWeek([
+    base("v", ["COMMANDER"], true),
+    base("s", ["DRIVER"]),
+    unavailable,
+    base("h1", ["FIREFIGHTER"]),
+    base("h2", ["FIREFIGHTER"]),
+  ], week.start, week.end, 1, DEFAULT_FAIRNESS_SETTINGS, () => 0);
+  assert.ok(result.plan);
+  assert.equal(result.plan!.crew.some((item) => item.member.id === unavailable.id), false);
+  assert.equal(result.plan!.replacements.length, 0);
 });
 test("nedostupnost končící přesně při začátku služby neblokuje", () => {
   const m = base("a", ["FIREFIGHTER"]);
@@ -817,7 +835,7 @@ test("coverage solver odmítne nepokrytou první sestavu a zkusí jinou základn
     "v-dobry",
   );
 });
-test("pokud známý výpadek nelze pokrýt, služba se nevytvoří a vrátí kritický interval", () => {
+test("pokud je jediný velitel běžně nedostupný, základní služba se nevytvoří", () => {
   const commander = base("v", ["COMMANDER"], true);
   commander.unavailable = [
     {
@@ -836,15 +854,53 @@ test("pokud známý výpadek nelze pokrýt, služba se nevytvoří a vrátí kri
     week.end,
   );
   assert.equal(result.plan, null);
-  assert.equal(result.diagnostic?.missingRole, "COMMANDER");
-  assert.equal(result.diagnostic?.availableCandidates, 0);
+  assert.equal(result.diagnostic, null);
+});
+test("nová běžná nedostupnost označí existující službu k řešení", () => {
+  const issue = hardUnavailabilityIssue([
+    {
+      name: "Jan Novák",
+      unavailable: [{
+        from: new Date("2026-09-10T08:00:00Z"),
+        to: new Date("2026-09-10T18:00:00Z"),
+      }],
+    },
+  ], week.start, week.end);
+  assert.equal(issue, "Člen Jan Novák je v tomto týdnu nedostupný.");
+});
+test("manuální picker označí běžně nedostupného člena a zakáže běžný výběr", () => {
+  const source = readFileSync("app/api/services/[id]/candidates/route.ts", "utf8");
+  assert.match(source, /Nedostupný – běžná nedostupnost zasahuje do služby/);
+  assert.match(source, /available:reasons\.length===0/);
+});
+test("měsíční plán vyřadí běžně nedostupného člena jen z překrývajícího týdne", () => {
+  const unavailable = base("h-nedostupny", ["FIREFIGHTER"]);
+  unavailable.unavailable = [{
+    from: new Date("2026-09-10T08:00:00Z"),
+    to: new Date("2026-09-10T18:00:00Z"),
+  }];
+  const intervals = [
+    week,
+    { start: week.end, end: new Date("2026-09-21T04:00:00Z") },
+  ];
+  const planned = planWeeksSequentially(intervals, [
+    base("v", ["COMMANDER"], true),
+    base("s", ["DRIVER"]),
+    unavailable,
+    base("h1", ["FIREFIGHTER"]),
+    base("h2", ["FIREFIGHTER"]),
+  ], [], { ...DEFAULT_SERVICE_SETTINGS, ...DEFAULT_FAIRNESS_SETTINGS }, () => 0);
+  assert.equal(planned.planned.length, 2);
+  assert.equal(planned.planned[0].crew.some((item) => item.member.id === unavailable.id), false);
+  assert.equal(planned.planned[1].crew.some((item) => item.member.id === unavailable.id), true);
 });
 test("DT se kontroluje v každém segmentu výsledné aktivní čtveřice", () => {
   const commander = base("v", ["COMMANDER"], true);
-  commander.unavailable = [
+  commander.recurringUnavailable = [
     {
-      from: new Date("2026-09-08T04:00:00Z"),
-      to: new Date("2026-09-09T04:00:00Z"),
+      anchorStart: new Date("2026-09-08T04:00:00Z"),
+      durationMinutes: 1440,
+      intervalMinutes: 99999,
     },
   ];
   const assignments = [
@@ -894,14 +950,11 @@ test("DT se kontroluje v každém segmentu výsledné aktivní čtveřice", () =
 });
 test("více oddělených výpadků může pokrýt stejný náhradník", () => {
   const firefighter = base("h1", ["FIREFIGHTER"]);
-  firefighter.unavailable = [
+  firefighter.recurringUnavailable = [
     {
-      from: new Date("2026-09-08T04:00:00Z"),
-      to: new Date("2026-09-09T04:00:00Z"),
-    },
-    {
-      from: new Date("2026-09-11T04:00:00Z"),
-      to: new Date("2026-09-12T04:00:00Z"),
+      anchorStart: new Date("2026-09-08T04:00:00Z"),
+      durationMinutes: 1440,
+      intervalMinutes: 4320,
     },
   ];
   const assignments = [
