@@ -18,6 +18,8 @@ Stránka **Týdenní služba** umožňuje plánovat jeden vybraný týden, pří
 
 Opakované pracovní směny se evidují pomocí kotvy, délky a periody. Člena nevyřazují ze základní týdenní posádky; aplikace pro každý skutečný překryv dopočítá konkrétní časový záskok, preferuje stejného platného náhradníka pro více výpadků a kontroluje oprávnění, zdraví, dostupnost i DT celé výsledné čtveřice. Náhradníkovi se eviduje počet a délka záskoků, nikoli celá týdenní služba.
 
+Tlačítko **Upravit sestavu** zpřístupní ruční výběr kandidátů pro každou pozici ve stavu `DRAFT` i `CONFIRMED`. Změny se nejprve drží pouze v editoru a ukládají se společně až po serverové validaci celé čtveřice. Změněné pozice dostanou `selectionMode=MANUAL`, ostatním zůstane původní režim. Potvrzená služba zůstává po platné úpravě potvrzená a AuditLog uchová původního i nového člena s časem změny.
+
 ## Kondice a povinnosti
 
 Modul **Kondice a povinnosti** eviduje použití dýchací techniky aktivních členů s `dt=true` a měsíční jízdy všech aktivních členů s `canDrive=true`. Kondiční i zásahová událost se započítává stejně. Další termín DT je přesně tři kalendářní měsíce od nejnovější události; upozornění se standardně zobrazí 30 dní předem. Jízdy se vyhodnocují podle aktuálního kalendářního měsíce v `Europe/Prague`.
