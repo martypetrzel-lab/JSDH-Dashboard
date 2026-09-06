@@ -198,7 +198,7 @@ export async function POST(request: Request) {
           action: existing ? "SERVICE_REROLLED" : "WEEK_DRAFT_CREATED",
           entity: "WeeklyService",
           entityId: service.id,
-          description: `Týdenní posádka byla automaticky ${existing ? "přelosována" : "vytvořena"}; stav: ${service.status}.`,
+          description: `Týdenní posádka byla automaticky ${existing ? "přelosována" : "vytvořena"}; stav: ${service.status}.${solved.diagnostic ? " 1 interval vyžaduje ruční záskok." : ""}`,
           actor: "Administrátor",
         },
       });

@@ -29,6 +29,17 @@ export async function syncServiceReplacements(serviceId: string) {
     if (invalid.length) await tx.serviceReplacement.createMany({ data: invalid.map((item) => ({ ...item, serviceId, source: "RECURRING" })) });
     const rows = coverage.plans.flatMap((plan) => plan.assignments.map((item) => ({ serviceId, from: plan.from, to: plan.to, role: item.role, slot: item.slot, memberId: item.member.id, originalAssignmentId: item.assignmentId, source: "RECURRING" as const, reason: "Pracovní směna 24/48" })));
     if (rows.length) await tx.serviceTemporaryAssignment.createMany({ data: rows });
+    const unresolvedIssue = invalid.length
+      ? `${invalid[0].from.toLocaleString("cs-CZ", { timeZone: settings?.timezone ?? "Europe/Prague" })}–${invalid[0].to.toLocaleString("cs-CZ", { timeZone: settings?.timezone ?? "Europe/Prague" })}: nepodařilo se automaticky sestavit náhradní posádku.`
+      : null;
+    await tx.weeklyService.update({
+      where: { id: serviceId },
+      data: invalid.length
+        ? { needsCrewChange: true, crewIssue: unresolvedIssue }
+        : service.crewIssue?.includes("nepodařilo se automaticky sestavit náhradní posádku")
+          ? { needsCrewChange: false, crewIssue: null }
+          : {},
+    });
     await tx.auditLog.create({ data: { action: rows.length ? "TEMP_CREW_CREATED" : "REPLACEMENTS_RECALCULATED", entity: "WeeklyService", entityId: serviceId, description: `Dočasné posádky byly přepočítány; intervalů: ${coverage.plans.length}, pozic: ${rows.length}.`, actor: "Systém" } });
   });
   return [...service.replacements, ...invalid];

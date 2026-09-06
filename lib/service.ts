@@ -177,12 +177,12 @@ export function serviceOperationalState(
 ) {
   if (status === "CANCELLED")
     return { kind: "cancelled" as const, label: "Zrušena" };
+  if (replacements.some((item) => !item.valid))
+    return { kind: "replacement" as const, label: "Vyžaduje záskok" };
   if (needsCrewChange)
     return { kind: "invalid" as const, label: "Vyžaduje změnu sestavy" };
   if (!crewValid)
     return { kind: "invalid" as const, label: "Neplatná sestava" };
-  if (replacements.some((item) => !item.valid))
-    return { kind: "replacement" as const, label: "Vyžaduje záskok" };
   return status === "CONFIRMED"
     ? { kind: "confirmed" as const, label: "Potvrzena" }
     : { kind: "draft" as const, label: "Návrh" };
@@ -913,6 +913,7 @@ export function planTemporaryCrews(
   const baseIds = new Set(baseAssignments.map((item) => item.member.id));
   const baseByMember = new Map(baseAssignments.map((item) => [item.member.id, item]));
   const plans: TemporaryCrewPlan[] = [];
+  let firstDiagnostic: CoverageDiagnostic | null = null;
 
   for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex += 1) {
     const from = new Date(points[segmentIndex]), to = new Date(points[segmentIndex + 1]);
@@ -952,7 +953,10 @@ export function planTemporaryCrews(
       }
     };
     search(0);
-    if (!best) return { plans: [], diagnostic: { from, to, missingRole: absent[0].role, availableCandidates: 0 } };
+    if (!best) {
+      firstDiagnostic ??= { from, to, missingRole: absent[0].role, availableCandidates: 0 };
+      continue;
+    }
     const bestCrew = (best as { crew: Candidate[]; score: number[] }).crew;
     plans.push({
       from, to, absentMemberIds: [...absentIds],
@@ -965,7 +969,7 @@ export function planTemporaryCrews(
       })),
     });
   }
-  return { plans, diagnostic: null };
+  return { plans, diagnostic: firstDiagnostic };
 }
 
 export function planCoveredSegments(
@@ -1001,6 +1005,7 @@ export function solveCoveredWeek(
     picked: (Assignment & { assignmentId: string })[] = [],
     used = new Set<string>();
   let solution: CoveredWeekPlan | null = null,
+    fallback: CoveredWeekPlan | null = null,
     lastDiagnostic: CoverageDiagnostic | null = null;
   const search = (index: number) => {
     if (solution) return;
@@ -1016,6 +1021,12 @@ export function solveCoveredWeek(
       );
       if (coverage.diagnostic) {
         lastDiagnostic = coverage.diagnostic;
+        const repeated = picked.filter((item) => item.member.servedPreviousWeek).length;
+        fallback ??= {
+          crew: [...picked],
+          replacements: [],
+          fairnessLevel: repeated === 0 ? 1 : repeated < 4 ? 2 : 3,
+        };
         return;
       }
       const repeated = picked.filter(
@@ -1057,7 +1068,7 @@ export function solveCoveredWeek(
     }
   };
   search(0);
-  return { plan: solution, diagnostic: lastDiagnostic };
+  return { plan: solution ?? fallback, diagnostic: solution ? null : lastDiagnostic };
 }
 export function replacementStatistics(
   items: Pick<

@@ -158,7 +158,7 @@ export async function POST(request: Request) {
             action: "WEEK_DRAFT_CREATED",
             entity: "WeeklyService",
             entityId: service.id,
-            description: `Plně pokrytý návrh služby byl vytvořen v měsíčním plánu ${month}.`,
+            description: `Návrh služby byl vytvořen v měsíčním plánu ${month}.${solved.diagnostic ? " 1 interval vyžaduje ruční záskok." : ""}`,
             actor: "Administrátor",
           },
         });

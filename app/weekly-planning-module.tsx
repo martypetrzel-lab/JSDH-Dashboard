@@ -78,6 +78,7 @@ type CrewCandidate = {
   available: boolean;
   warnings: string[];
 };
+type ManualDraftCandidate = { id:string; name:string; roles:string[]; dt:boolean; medicalValidUntil:string; available:boolean; hardUnavailable:boolean; recurringCount:number; warnings:string[] };
 type ReplacementInput = {
   assignmentId: string;
   from: string;
@@ -129,7 +130,10 @@ export function WeeklyPlanningModule({
   const [updatedConfirmed, setUpdatedConfirmed] = useState<Set<string>>(
     new Set(),
   );
-  const [manualAfterGenerate, setManualAfterGenerate] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualCandidates, setManualCandidates] = useState<ManualDraftCandidate[]>([]);
+  const [manualMinimumDt, setManualMinimumDt] = useState(settings.minimumDt);
+  const [manualSelection, setManualSelection] = useState<Record<string,string>>({});
   const [futureAction, setFutureAction] = useState<{
     kind: FutureActionKind;
     service: DashboardService;
@@ -183,7 +187,6 @@ export function WeeklyPlanningModule({
   const generate = async (
     reference = new Date(week.from),
     confirmed = false,
-    prepareManually = false,
   ) => {
     if (
       confirmed &&
@@ -202,14 +205,11 @@ export function WeeklyPlanningModule({
         body = await response.json();
       if (!response.ok) throw new Error(body.error);
       setWeek({ from: body.service.from, to: body.service.to });
-      setManualAfterGenerate(prepareManually);
       replaceEverywhere(body.service);
       if (body.service.status === "CONFIRMED")
         setUpdatedConfirmed((ids) => new Set(ids).add(body.service.id));
       notify(
-        prepareManually
-          ? "Výchozí sestava je připravena k ruční úpravě."
-          : service
+        service
             ? "Služba byla přelosována a znovu ověřena."
             : "Návrh služby byl vytvořen.",
       );
@@ -223,6 +223,30 @@ export function WeeklyPlanningModule({
     } finally {
       setBusy(false);
     }
+  };
+  const openManualDraft = async () => {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/services/manual-draft?reference=${encodeURIComponent(week.from)}`), body = await response.json();
+      if (!response.ok) throw new Error(body.error);
+      setManualCandidates(body.candidates); setManualMinimumDt(body.minimumDt); setManualSelection({}); setManualOpen(true);
+    } catch (error) { notify(error instanceof Error ? error.message : "Ruční editor se nepodařilo otevřít."); }
+    finally { setBusy(false); }
+  };
+  const manualPositions = [{key:"COMMANDER:1",role:"COMMANDER",slot:1,label:"Velitel"},{key:"DRIVER:1",role:"DRIVER",slot:1,label:"Strojník"},{key:"FIREFIGHTER:1",role:"FIREFIGHTER",slot:1,label:"Hasič 1"},{key:"FIREFIGHTER:2",role:"FIREFIGHTER",slot:2,label:"Hasič 2"}] as const;
+  const manualIds = manualPositions.map((item) => manualSelection[item.key]).filter(Boolean);
+  const manualDuplicate = new Set(manualIds).size !== manualIds.length;
+  const manualDtCount = manualIds.filter((id) => manualCandidates.find((item) => item.id === id)?.dt).length;
+  const manualError = manualIds.length !== 4 ? "Vyberte všechny čtyři členy." : manualDuplicate ? "Stejný člen je vybrán dvakrát." : manualDtCount < manualMinimumDt ? `Chybí minimálně ${manualMinimumDt} nositel DT.` : null;
+  const saveManualDraft = async () => {
+    if (manualError) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/services/manual-draft", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ reference:week.from, assignments:manualPositions.map((item)=>({role:item.role,slot:item.slot,memberId:manualSelection[item.key]})) }) }), body=await response.json();
+      if(!response.ok)throw new Error(body.error);
+      setManualOpen(false); setWeek({from:body.service.from,to:body.service.to}); replaceEverywhere(body.service); notify(body.service.needsCrewChange?"Ruční návrh byl uložen a vyžaduje vyřešit záskok.":"Ruční návrh byl uložen.");
+    } catch(error){notify(error instanceof Error?error.message:"Ruční návrh se nepodařilo uložit.");}
+    finally{setBusy(false);}
   };
   const confirm = async (target: DashboardService) => {
     setBusy(true);
@@ -619,8 +643,7 @@ export function WeeklyPlanningModule({
     busy,
     members: memberOptions,
     updated: updatedConfirmed.has(item.id),
-    startInEdit:
-      mode === "week" && manualAfterGenerate && item.id === service?.id,
+    startInEdit: false,
     onDetail: mode === "month" ? () => openDetail(item) : undefined,
     onReroll: () =>
       void generate(new Date(item.from), item.status === "CONFIRMED"),
@@ -709,6 +732,18 @@ export function WeeklyPlanningModule({
     </AlertDialog>
   );
 
+  const manualDraftDialog = (
+    <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+      <DialogContent className="manual-crew-dialog">
+        <DialogHeader><DialogTitle>Ruční sestava</DialogTitle><DialogDescription>Vyberte základní posádku pro tento týden. Pracovní směny 24/48 se dopočítají až po uložení.</DialogDescription></DialogHeader>
+        <div className="manual-crew-grid">
+          {manualPositions.map((position)=><label key={position.key}><strong>{position.label}</strong><select value={manualSelection[position.key]??""} onChange={(event)=>setManualSelection((current)=>({...current,[position.key]:event.target.value}))}><option value="">Vyberte člena</option>{manualCandidates.filter((candidate)=>candidate.roles.includes(position.role)).map((candidate)=><option key={candidate.id} value={candidate.id} disabled={!candidate.available}>{candidate.name}{candidate.dt?" · DT":""}{candidate.hardUnavailable?" · Nedostupný":""}{candidate.recurringCount?" · směna 24/48":""}</option>)}</select>{manualSelection[position.key]&&<small>{manualCandidates.find((candidate)=>candidate.id===manualSelection[position.key])?.warnings.join(" · ")||"Dostupný a zdravotně způsobilý"}</small>}</label>)}
+        </div>
+        <div className={manualError?"planning-error":"crew-valid-banner"}><strong>DT: {manualDtCount} / minimum {manualMinimumDt}</strong><span>{manualError??"Základní sestava je platná."}</span></div>
+        <DialogFooter><Button variant="outline" onClick={()=>setManualOpen(false)}>Zrušit</Button><Button className="primary-action compact" disabled={busy||!!manualError} onClick={()=>void saveManualDraft()}>Uložit návrh</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
   if (mode === "month")
     return (
       <div className="module-stack">
@@ -795,6 +830,7 @@ export function WeeklyPlanningModule({
           </Button>
         </div>
         {futureDialog}
+        {manualDraftDialog}
         <MonthDialog
           open={monthDialog}
           onOpenChange={setMonthDialog}
@@ -877,7 +913,7 @@ export function WeeklyPlanningModule({
             <Button
               variant="outline"
               disabled={busy}
-              onClick={() => void generate(new Date(week.from), false, true)}
+              onClick={() => void openManualDraft()}
             >
               Připravit ručně
             </Button>
@@ -885,6 +921,7 @@ export function WeeklyPlanningModule({
         </article>
       )}
       {futureDialog}
+      {manualDraftDialog}
       <MonthDialog
         open={monthDialog}
         onOpenChange={setMonthDialog}
@@ -1050,6 +1087,7 @@ function WeekCard({
     service.replacements,
     service.needsCrewChange,
   );
+  const unresolvedReplacement = service.replacements.find((item) => !item.valid);
   const timeline = serviceTimeline(
     new Date(service.from),
     new Date(service.to),
@@ -1169,7 +1207,7 @@ function WeekCard({
             <strong>Vyžaduje změnu sestavy</strong>
             <span>{service.crewIssue ?? "Člen základní sestavy je v tomto týdnu nedostupný."}</span>
             <span className="record-actions">
-              <Button variant="outline" size="sm" onClick={startEdit}>Nahradit člena</Button>
+              <Button variant="outline" size="sm" onClick={() => unresolvedReplacement ? openOutage(unresolvedReplacement.assignmentId, unresolvedReplacement) : startEdit()}>{unresolvedReplacement ? "Vyřešit záskok" : "Nahradit člena"}</Button>
               <Button variant="outline" size="sm" disabled={busy} onClick={onReroll}>Přegenerovat tento týden</Button>
             </span>
           </div>

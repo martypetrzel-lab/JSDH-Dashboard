@@ -836,6 +836,24 @@ test("coverage solver odmítne nepokrytou první sestavu a zkusí jinou základn
     "v-dobry",
   );
 });
+test("platná základní posádka zůstane návrhem i s nepokrytým recurring intervalem", () => {
+  const commander = base("v", ["COMMANDER"], true);
+  commander.recurringUnavailable = [{ anchorStart: new Date("2026-09-08T04:00:00Z"), durationMinutes: 1440, intervalMinutes: 99999 }];
+  const result = solveCoveredWeek([commander, base("s", ["DRIVER"]), base("h1", ["FIREFIGHTER"]), base("h2", ["FIREFIGHTER"])], week.start, week.end, 1, DEFAULT_FAIRNESS_SETTINGS, () => 0);
+  assert.ok(result.plan);
+  assert.equal(result.plan!.crew.length, 4);
+  assert.ok(result.diagnostic);
+});
+
+test("ruční návrh má samostatný endpoint a tlačítko nepoužívá generate flow", () => {
+  const ui = readFileSync("app/weekly-planning-module.tsx", "utf8"), route = readFileSync("app/api/services/manual-draft/route.ts", "utf8");
+  assert.match(ui, /openManualDraft/);
+  assert.match(ui, /\/api\/services\/manual-draft/);
+  assert.doesNotMatch(ui, /generate\(new Date\(week\.from\), false, true\)/);
+  assert.match(route, /selectionMode: "MANUAL"/);
+  assert.match(route, /WEEK_DRAFT_CREATED_MANUAL/);
+  assert.match(route, /syncServiceReplacements/);
+});
 test("dočasná posádka přesune hasiče na velitele a doplní externího hasiče bez duplicity", () => {
   const commander = base("velitel", ["COMMANDER"], true);
   commander.recurringUnavailable = [{ anchorStart: new Date("2026-09-08T04:00:00Z"), durationMinutes: 1440, intervalMinutes: 99999 }];
