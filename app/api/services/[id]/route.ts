@@ -450,10 +450,7 @@ export async function DELETE(
     if (!canHardDeleteService(service.status, input.confirmedAcknowledged))
       return NextResponse.json(
         {
-          error:
-            service.status === "CONFIRMED"
-              ? "Potvrďte, že rozumíte smazání potvrzené služby."
-              : "Tuto službu nelze úplně smazat.",
+          error: "Potvrďte, že rozumíte trvalému odstranění této služby.",
         },
         { status: 409 },
       );

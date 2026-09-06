@@ -1376,20 +1376,6 @@ function WeekCard({
                   </Button>
                   {(service.status === "DRAFT" ||
                     service.status === "CONFIRMED") && (
-                    <Button
-                      variant="outline"
-                      className="danger-button"
-                      disabled={busy}
-                      onClick={() => {
-                        setConfirmedAcknowledged(false);
-                        setDeleteOpen(true);
-                      }}
-                    >
-                      <Trash2 size={14} /> Smazat tento týden
-                    </Button>
-                  )}
-                  {(service.status === "DRAFT" ||
-                    service.status === "CONFIRMED") && (
                     <>
                       <Button
                         variant="outline"
@@ -1428,6 +1414,17 @@ function WeekCard({
                   )}
                 </>
               )}
+              <Button
+                variant="outline"
+                className="danger-button"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmedAcknowledged(false);
+                  setDeleteOpen(true);
+                }}
+              >
+                <Trash2 size={14} /> Smazat tento týden
+              </Button>
             </>
           )}
         </div>
@@ -1612,7 +1609,11 @@ function WeekCard({
         <AlertDialogContent className="service-delete-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Opravdu chcete smazat celou službu?
+              {service.status === "CONFIRMED"
+                ? "Opravdu chcete úplně smazat potvrzenou službu?"
+                : service.status === "CANCELLED"
+                  ? "Opravdu chcete úplně smazat zrušenou službu?"
+                  : "Opravdu chcete smazat celou službu?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               Odstranění se provede pro celý uvedený interval.
@@ -1629,7 +1630,7 @@ function WeekCard({
               související plánování pro tento týden.
             </p>
             <b>Tuto akci nelze vrátit zpět.</b>
-            {service.status === "CONFIRMED" && (
+            {service.status !== "DRAFT" && (
               <label>
                 <input
                   type="checkbox"
@@ -1638,7 +1639,7 @@ function WeekCard({
                     setConfirmedAcknowledged(event.target.checked)
                   }
                 />{" "}
-                Rozumím, že mažu potvrzenou službu.
+                Rozumím, že tato služba bude trvale odstraněna.
               </label>
             )}
           </div>
@@ -1648,7 +1649,7 @@ function WeekCard({
               className="danger-button"
               disabled={
                 busy ||
-                (service.status === "CONFIRMED" && !confirmedAcknowledged)
+                (service.status !== "DRAFT" && !confirmedAcknowledged)
               }
               onClick={(event) => {
                 event.preventDefault();

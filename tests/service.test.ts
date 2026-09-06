@@ -627,11 +627,18 @@ test("serverové porovnání přihlašovacích hodnot rozliší shodu", () => {
   assert.equal(constantTimeEqual("spravne-heslo", "spravne-heslo"), true);
   assert.equal(constantTimeEqual("spatne-heslo", "spravne-heslo"), false);
 });
-test("DRAFT lze smazat a CONFIRMED až po zvláštním potvrzení", () => {
+test("DRAFT lze hard-delete bez potvrzení", () => {
   assert.equal(canHardDeleteService("DRAFT"), true);
+});
+test("CONFIRMED lze hard-delete pouze po potvrzení", () => {
   assert.equal(canHardDeleteService("CONFIRMED"), false);
   assert.equal(canHardDeleteService("CONFIRMED", true), true);
-  assert.equal(canHardDeleteService("CANCELLED", true), false);
+});
+test("CANCELLED lze hard-delete pouze po potvrzení", () => {
+  assert.equal(canHardDeleteService("CANCELLED"), false);
+  assert.equal(canHardDeleteService("CANCELLED", true), true);
+});
+test("běžné zrušení již zrušené služby zůstává zakázané", () => {
   assert.equal(canCancelService("CONFIRMED"), true);
   assert.equal(canCancelService("CANCELLED"), false);
 });

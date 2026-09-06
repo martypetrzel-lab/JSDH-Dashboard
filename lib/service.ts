@@ -63,7 +63,10 @@ export const MISSING_DT_ERROR =
 export const canHardDeleteService = (
   status: "DRAFT" | "CONFIRMED" | "CANCELLED",
   confirmedAcknowledged = false,
-) => status === "DRAFT" || (status === "CONFIRMED" && confirmedAcknowledged);
+) =>
+  status === "DRAFT" ||
+  ((status === "CONFIRMED" || status === "CANCELLED") &&
+    confirmedAcknowledged);
 export const canCancelService = (status: "DRAFT" | "CONFIRMED" | "CANCELLED") =>
   status !== "CANCELLED";
 export function serviceDeletionAuditDescription(service: {
