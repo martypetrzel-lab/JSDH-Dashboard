@@ -50,6 +50,27 @@ enum DriverActivityType {
   INCIDENT
 }
 
+enum ShoppingItemStatus {
+  PLANNED
+  PURCHASED
+}
+
+model ShoppingItem {
+  id               String             @id @default(cuid())
+  name             String
+  estimatedPrice   Int?
+  purchaseDeadline DateTime?          @db.Date
+  store            String?
+  url              String?
+  note             String?
+  status           ShoppingItemStatus @default(PLANNED)
+  purchasedAt      DateTime?          @db.Date
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([status, purchaseDeadline])
+}
+
 model Member {
   id                       String                    @id @default(cuid())
   firstName                String

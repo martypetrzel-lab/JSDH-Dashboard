@@ -1,0 +1,18 @@
+import { z } from "zod";
+
+const optionalText = (max: number) => z.string().trim().max(max).optional().default("");
+export const shoppingItemInputSchema = z.object({
+  name: z.string().trim().min(2).max(200),
+  estimatedPrice: z.number().int().min(0).nullable().optional().default(null),
+  purchaseDeadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().default(null),
+  store: optionalText(200),
+  url: z.union([z.literal(""), z.url().refine((value) => /^https?:\/\//i.test(value), "Odkaz musí používat http nebo https.")]).optional().default(""),
+  note: optionalText(1000),
+});
+export const shoppingStatusSchema = z.object({ status: z.enum(["PLANNED", "PURCHASED"]) });
+export type ShoppingRow = { id: string; name: string; estimatedPrice: number | null; purchaseDeadline: string | null; store: string; url: string; note: string; status: "PLANNED" | "PURCHASED"; purchasedAt: string | null };
+export function serializeShoppingItem(item: { id: string; name: string; estimatedPrice: number | null; purchaseDeadline: Date | null; store: string | null; url: string | null; note: string | null; status: string; purchasedAt: Date | null }): ShoppingRow { return { id: item.id, name: item.name, estimatedPrice: item.estimatedPrice, purchaseDeadline: item.purchaseDeadline?.toISOString().slice(0, 10) ?? null, store: item.store ?? "", url: item.url ?? "", note: item.note ?? "", status: item.status === "PURCHASED" ? "PURCHASED" : "PLANNED", purchasedAt: item.purchasedAt?.toISOString().slice(0, 10) ?? null }; }
+const dayValue = (value: string) => new Date(`${value}T12:00:00Z`).getTime();
+export function shoppingDeadlineState(item: ShoppingRow, now = new Date()) { if (item.status === "PURCHASED" || !item.purchaseDeadline) return "normal" as const; const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12), days = Math.ceil((dayValue(item.purchaseDeadline) - today) / 86400000); return days < 0 ? "overdue" as const : days <= 7 ? "soon" as const : "normal" as const; }
+export function sortShoppingItems(items: ShoppingRow[], now = new Date()) { return [...items].sort((a, b) => { if (a.status !== b.status) return a.status === "PLANNED" ? -1 : 1; if (a.status === "PURCHASED") return (b.purchasedAt ?? "").localeCompare(a.purchasedAt ?? ""); const ao = shoppingDeadlineState(a, now) === "overdue", bo = shoppingDeadlineState(b, now) === "overdue"; if (ao !== bo) return ao ? -1 : 1; if (!a.purchaseDeadline !== !b.purchaseDeadline) return a.purchaseDeadline ? -1 : 1; return (a.purchaseDeadline ?? "9999").localeCompare(b.purchaseDeadline ?? "9999") || a.name.localeCompare(b.name, "cs"); }); }
+export function shoppingSummary(items: ShoppingRow[], now = new Date()) { const planned = items.filter((item) => item.status === "PLANNED"), deadlines = planned.map((item) => item.purchaseDeadline).filter((value): value is string => !!value).sort(); return { count: planned.length, total: planned.reduce((sum, item) => sum + (item.estimatedPrice ?? 0), 0), overdue: planned.filter((item) => shoppingDeadlineState(item, now) === "overdue").length, nearest: deadlines[0] ?? null }; }
