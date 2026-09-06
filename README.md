@@ -6,13 +6,15 @@ Na stránce **Členové** je dostupný hromadný import z Excelu, Google Sheets 
 
 ## Časové pravidlo služby
 
-Týdenní služba začíná v **pondělí v 06:00** a končí v **neděli v 06:00** v časovém pásmu `Europe/Prague`. Časové hranice se počítají v pražském pásmu včetně změn letního a zimního času. Intervaly nedostupnosti jsou polouzavřené: záznam končící přesně na začátku služby už tuto službu neblokuje.
+Týdenní služba začíná v **pondělí v 06:00** a končí v **následující pondělí v 06:00** v časovém pásmu `Europe/Prague`. Časové hranice se počítají v pražském pásmu včetně změn letního a zimního času. Intervaly nedostupnosti jsou polouzavřené: záznam končící přesně na začátku služby už tuto službu neblokuje.
 
 Nedostupnost se eviduje včetně přesného času. Lze zvolit celý den, aktuální či příští službu nebo vlastní interval. Jakýkoli překryv se službou vyřadí člena z automatického výběru pro celý daný týden.
 
 Požadavek na nositele dýchací techniky se kontroluje pro celou čtyřčlennou posádku. Náhradník nemusí mít DT, pokud výsledná sestava stále splňuje hodnotu `Settings.minimumDt` (výchozí hodnota je `1`).
 
 Tlačítko **Navrhnout posádku** na stránce Týdenní služba načítá členy, oprávnění, zdravotní platnost, přesné nedostupnosti a historii služeb přímo z PostgreSQL. Návrh ukládá jako `DRAFT`; při potvrzení se všechna pravidla znovu kontrolují nad aktuálními databázovými údaji.
+
+Stránka **Týdenní služba** umožňuje plánovat jeden vybraný týden, příští týden i všechny služby začínající ve zvoleném kalendářním měsíci. Měsíční generování postupuje chronologicky a každou nově navrženou posádku zahrne do férovosti následujících týdnů. Existující návrhy zachová a potvrzené služby nikdy nepřepisuje. Návrhy lze po týdnech upravit, přelosovat, odstranit a jednotlivě nebo hromadně potvrdit po nové serverové validaci.
 
 ## Kondice a povinnosti
 

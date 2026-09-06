@@ -1,0 +1,8 @@
+import type { Candidate, Role } from './service.ts';
+
+export type MemberForPlanning={id:string;firstName:string;lastName:string;active:boolean;systemAccount:boolean;reserveOnly:boolean;dt:boolean;medicalExamAt:Date|null;medicalValidUntil:Date|null;canCommand:boolean;canDrive:boolean;canFight:boolean;unavailability:{from:Date;to:Date}[]};
+export type AssignmentHistory={memberId:string;role:string;service:{weekStart:Date}};
+
+export function toPlanningCandidates(members:MemberForPlanning[],history:AssignmentHistory[],weekStart:Date):Candidate[]{
+  return members.map(member=>{const records=history.filter(item=>item.memberId===member.id&&item.service.weekStart<weekStart);return{id:member.id,name:`${member.firstName} ${member.lastName==='—'?'':member.lastName}`.trim(),active:member.active,system:member.systemAccount,reserveOnly:member.reserveOnly,dt:member.dt,medicalExam:member.medicalExamAt,medicalValidUntil:member.medicalValidUntil,roles:[member.canCommand&&'COMMANDER',member.canDrive&&'DRIVER',member.canFight&&'FIREFIGHTER'].filter(Boolean) as Role[],serviceCount:records.length,roleServiceCount:{COMMANDER:records.filter(item=>item.role==='COMMANDER').length,DRIVER:records.filter(item=>item.role==='DRIVER').length,FIREFIGHTER:records.filter(item=>item.role==='FIREFIGHTER').length},lastService:records.length?new Date(Math.max(...records.map(item=>item.service.weekStart.getTime()))):null,servedPreviousWeek:records.some(item=>{const difference=weekStart.getTime()-item.service.weekStart.getTime();return difference>=6.5*86400000&&difference<=7.5*86400000}),unavailable:member.unavailability.map(item=>({from:item.from,to:item.to}))};});
+}

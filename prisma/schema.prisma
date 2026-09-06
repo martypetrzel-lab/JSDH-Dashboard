@@ -167,7 +167,7 @@ model Settings {
   id               String   @id @default("default")
   weekStartDay     Int      @default(1)
   weekStartHour    Int      @default(6)
-  weekEndDay       Int      @default(0)
+  weekEndDay       Int      @default(1)
   weekEndHour      Int      @default(6)
   fairDraw         Boolean  @default(true)
   considerTotal    Boolean  @default(true)

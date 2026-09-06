@@ -9,7 +9,7 @@ await prisma.settings.upsert({
     id: 'default',
     weekStartDay: 1,
     weekStartHour: 6,
-    weekEndDay: 0,
+    weekEndDay: 1,
     weekEndHour: 6,
     timezone: 'Europe/Prague',
     minimumDt: 1,
