@@ -44,7 +44,7 @@ Lokální adresa je `http://localhost:3000`. Soubor `.env.local` je ignorovaný 
 
 ## Přihlášení administrátora
 
-Aplikace používá uživatelské jméno z `ADMIN_USERNAME` a heslo z `ADMIN_PASSWORD`. Obě hodnoty načítá a porovnává výhradně server; heslo se neposílá do frontendového JavaScriptu ani se neloguje.
+Aplikace vždy zachovává nouzový superadmin účet s uživatelským jménem z `ADMIN_USERNAME` a heslem z `ADMIN_PASSWORD`. Další administrátorské účty jsou uložené v PostgreSQL jako `AppUser`; jejich hesla se na serveru hashují pomocí bcrypt a nikdy se neposílají do frontendového JavaScriptu ani se nelogují.
 
 Na Railway nastavte:
 
@@ -57,7 +57,7 @@ Heslo je uložené pouze jako Railway environment variable a nikdy nesmí být s
 
 ## Databáze a soukromí
 
-Schéma je v `prisma/schema.prisma` a produkční migrace v `prisma/migrations/`. Obsahuje modely `Member`, `Unavailability`, `WeeklyService`, `WeeklyServiceAssignment`, `AuditLog`, `Settings`, `AdminSession`, `LoginAttempt` a `MedicalTemplate`.
+Schéma je v `prisma/schema.prisma` a produkční migrace v `prisma/migrations/`. Obsahuje mimo jiné modely `Member`, `Unavailability`, `WeeklyService`, `WeeklyServiceAssignment`, `AppUser`, `AuditLog`, `Settings`, `AdminSession`, `LoginAttempt` a `MedicalTemplate`.
 
 `npm run db:seed` vytvoří pouze technická nastavení a žádné členy. Projekt neobsahuje demonstrační členy ani ukázkovou posádku; přehled zobrazuje výhradně potvrzenou službu uloženou v PostgreSQL. Reálná jména, data narození, zdravotní údaje a dokumenty patří pouze do neveřejné PostgreSQL databáze.
 
@@ -105,3 +105,20 @@ Soubor `railway.toml` nastavuje Railpack, build, bezpečné nasazení migrací, 
 - `TZ`
 
 Aplikace bez těchto hodnot nepoužije nebezpečné výchozí přihlašovací údaje a vrátí srozumitelnou serverovou chybu.
+
+### Jednorázové vytvoření databázových uživatelů
+
+Pro počáteční vytvoření účtů nastavte dočasně u služby JSDH-Dashboard v Railway:
+
+```text
+BOOTSTRAP_MARTINB_PASSWORD=<heslo>
+BOOTSTRAP_MILANH_PASSWORD=<heslo>
+```
+
+Potom jednorázově spusťte:
+
+```bash
+npm run users:bootstrap
+```
+
+Příkaz bezpečně vytvoří nebo aktualizuje administrátorské účty `MartinB` (Martin Bradáč) a `MilanH` (Milan Hél). Do výstupu, auditu ani zdrojových souborů nezapisuje hesla nebo jejich hashe. Po úspěšném dokončení obě proměnné `BOOTSTRAP_MARTINB_PASSWORD` a `BOOTSTRAP_MILANH_PASSWORD` z Railway odstraňte; běžná aplikace je nepotřebuje. Další účty lze spravovat přímo v sekci **Nastavení → Uživatelé**.

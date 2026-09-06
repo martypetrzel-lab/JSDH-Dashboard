@@ -244,6 +244,20 @@ model AdminSession {
   @@index([expiresAt])
 }
 
+model AppUser {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  displayName  String
+  passwordHash String
+  active       Boolean   @default(true)
+  isAdmin      Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  @@index([active])
+}
+
 model LoginAttempt {
   key         String   @id
   attempts    Int      @default(0)

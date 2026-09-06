@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getPrisma } from '@/lib/prisma';
 import { getRuntimeEnv } from '@/lib/runtime-env';
-import { constantTimeEqual } from '@/lib/secure-compare';
+import { authenticateWithSources } from '@/lib/auth-credentials';
 
 const COOKIE_NAME = 'jsdh_admin_session';
 const SESSION_HOURS = 12;
@@ -14,9 +14,14 @@ function sessionHash(token: string, secret: string) {
 
 export async function authenticateAdmin(username: string, password: string) {
   const env = getRuntimeEnv();
-  const usernameMatches = constantTimeEqual(username, env.ADMIN_USERNAME);
-  const passwordMatches = constantTimeEqual(password, env.ADMIN_PASSWORD);
-  return usernameMatches && passwordMatches ? env.ADMIN_USERNAME : null;
+  const prisma = getPrisma();
+  const result=await authenticateWithSources(username,password,{username:env.ADMIN_USERNAME,password:env.ADMIN_PASSWORD},value=>prisma.appUser.findUnique({where:{username:value},select:{id:true,username:true,passwordHash:true,active:true,isAdmin:true}}));
+  if(!result)return null;
+  await prisma.$transaction(async tx=>{
+    if(result.userId)await tx.appUser.update({where:{id:result.userId},data:{lastLoginAt:new Date()}});
+    await tx.auditLog.create({data:{action:'USER_LOGIN',entity:'AppUser',entityId:result.userId??'env-superadmin',description:`Uživatel ${result.username} se úspěšně přihlásil${result.userId?' databázovým účtem':' nouzovým ENV účtem'}.`,actor:result.username}});
+  });
+  return result.username;
 }
 
 export async function createAdminSession(username: string) {
@@ -44,6 +49,10 @@ export async function getAdminSession() {
   if (!session || session.expiresAt <= new Date()) {
     if (session) await prisma.adminSession.delete({ where: { id: session.id } }).catch(() => undefined);
     return null;
+  }
+  if(session.username!==env.ADMIN_USERNAME){
+    const user=await prisma.appUser.findUnique({where:{username:session.username},select:{active:true,isAdmin:true}});
+    if(!user?.active||!user.isAdmin){await prisma.adminSession.delete({where:{id:session.id}}).catch(()=>undefined);return null;}
   }
   return { username: session.username, expiresAt: session.expiresAt };
 }
