@@ -35,6 +35,11 @@ enum SelectionMode {
   MANUAL
 }
 
+enum ReplacementSource {
+  RECURRING
+  MANUAL
+}
+
 enum DtActivityType {
   CONDITIONING
   INCIDENT
@@ -142,6 +147,8 @@ model WeeklyService {
   weekEnd     DateTime
   status      ServiceStatus             @default(DRAFT)
   confirmedAt DateTime?
+  cancelledAt DateTime?
+  cancellationReason String?
   createdAt   DateTime                  @default(now())
   updatedAt   DateTime                  @updatedAt
   assignments WeeklyServiceAssignment[]
@@ -181,6 +188,8 @@ model ServiceReplacement {
   to                  DateTime
   valid               Boolean                 @default(false)
   issue               String?
+  reason              String?
+  source              ReplacementSource       @default(RECURRING)
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   service             WeeklyService           @relation(fields: [serviceId], references: [id], onDelete: Cascade)

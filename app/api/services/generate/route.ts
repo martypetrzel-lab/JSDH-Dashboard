@@ -28,12 +28,12 @@ export async function POST(request:Request){
     if(!crew){const withoutDt=assembleCrew(candidates,interval.start,interval.end,Math.random,0);return NextResponse.json({error:withoutDt?MISSING_DT_ERROR:'Pro tento týden nelze sestavit platnou posádku z dostupných členů.'},{status:422});}
     const serviceId=await prisma.$transaction(async tx=>{
       const existing=await tx.weeklyService.findUnique({where:{weekStart:interval.start}});
-      if(existing?.status==='CONFIRMED')throw new Error('Potvrzenou službu nelze automaticky přelosovat.');
-      const service=existing?await tx.weeklyService.update({where:{id:existing.id},data:{weekEnd:interval.end,status:'DRAFT',confirmedAt:null}}):await tx.weeklyService.create({data:{weekStart:interval.start,weekEnd:interval.end,status:'DRAFT'}});
+      if(existing?.status==='CANCELLED')throw new Error('Zrušenou službu nelze přelosovat.');
+      const service=existing?await tx.weeklyService.update({where:{id:existing.id},data:{weekEnd:interval.end}}):await tx.weeklyService.create({data:{weekStart:interval.start,weekEnd:interval.end,status:'DRAFT'}});
       await tx.weeklyServiceAssignment.deleteMany({where:{serviceId:service.id}});
       const slots=new Map<Role,number>();
       await tx.weeklyServiceAssignment.createMany({data:crew.map(assignment=>{const slot=(slots.get(assignment.role)??0)+1;slots.set(assignment.role,slot);return{serviceId:service.id,memberId:assignment.member.id,role:assignment.role,slot,selectionMode:'AUTO',nameSnapshot:assignment.member.name,roleSnapshot:assignment.role,dtSnapshot:assignment.member.dt};})});
-      await tx.auditLog.create({data:{action:existing?'WEEK_REROLLED':'WEEK_DRAFT_CREATED',entity:'WeeklyService',entityId:service.id,description:'Automatický návrh týdenní posádky byl uložen.',actor:'Administrátor'}});
+      await tx.auditLog.create({data:{action:existing?'SERVICE_REROLLED':'WEEK_DRAFT_CREATED',entity:'WeeklyService',entityId:service.id,description:`Týdenní posádka byla automaticky ${existing?'přelosována':'vytvořena'}; stav: ${service.status}.`,actor:'Administrátor'}});
       return service.id;
     });
     await syncServiceReplacements(serviceId);

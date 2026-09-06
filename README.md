@@ -63,6 +63,12 @@ Schéma je v `prisma/schema.prisma` a produkční migrace v `prisma/migrations/`
 
 Vzor lékařského posudku se nahrává v aplikaci v části **Zdravotní prohlídky**. Obsah souboru je uložený v PostgreSQL, nikoli v lokálním souborovém systému.
 
+## Správa týdenní služby
+
+Návrh služby lze úplně smazat. Potvrzená služba se kvůli historii nemaže, ale přepne do stavu `CANCELLED` s volitelným důvodem a auditním záznamem. Administrátor může u aktivní služby upravit základní sestavu, přelosovat ji nebo přes akci **Člen vypadl** vytvořit časový záskok na část týdne či přesně do konce služby. Ruční záskoky se ukládají odděleně od záskoků odvozených z opakovaných pracovních směn, takže se při jejich přepočtu neztratí.
+
+Časový průběh v detailu služby vzniká vždy z aktuálních záznamů `WeeklyService`, `WeeklyServiceAssignment` a `ServiceReplacement`. Nevyřešený výpadek se zobrazí jako **Vyžaduje záskok** a DRAFT s chybějícím náhradníkem nelze potvrdit. Každé zrušení, změna základního člena a vytvoření, úprava či odstranění ručního záskoku se zapisuje do `AuditLog`.
+
 ## Kontroly kvality
 
 ```bash

@@ -26,7 +26,7 @@ const ICON = {
 
 export function buildWhatsAppMessage(crew: WhatsAppCrew) {
   const lines = [
-    `${ICON.engine} ${crew.updated?'AKTUALIZACE TÝDENNÍ SLUŽBY':'JSDH NEHVIZDY – TÝDENNÍ SLUŽBA'}`,
+    `${crew.updated?'\u{1F6A8} AKTUALIZACE TÝDENNÍ SLUŽBY':`${ICON.engine} JSDH NEHVIZDY – TÝDENNÍ SLUŽBA`}`,
     '',
     `${ICON.calendar} ${crew.from} – ${crew.to}`,
     '',
