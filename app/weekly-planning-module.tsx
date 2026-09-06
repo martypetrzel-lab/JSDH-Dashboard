@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   Check,
@@ -84,7 +84,9 @@ type ReplacementInput = {
   from: string;
   to: string;
   reason: string;
+  replacementMemberId?: string | null;
 };
+type ReplacementCandidate = { id:string; name:string; dt:boolean; eligible:boolean; warnings:string[]; reason:string|null };
 type FutureActionKind = "DELETE_FROM" | "REGENERATE_FROM" | "REGENERATE_MONTH";
 
 const monthValue = (date = new Date(), timeZone = "Europe/Prague") =>
@@ -999,6 +1001,9 @@ function WeekCard({
   const [outageFrom, setOutageFrom] = useState("");
   const [outageTo, setOutageTo] = useState("");
   const [outageReason, setOutageReason] = useState("");
+  const [outageReplacementMemberId, setOutageReplacementMemberId] = useState("");
+  const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
+  const [replacementCandidatesBusy, setReplacementCandidatesBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmedAcknowledged, setConfirmedAcknowledged] = useState(false);
   const [knownDt, setKnownDt] = useState<Record<string, boolean>>(() =>
@@ -1049,15 +1054,10 @@ function WeekCard({
         now > new Date(service.from) && now < new Date(service.to)
           ? now
           : new Date(service.from);
-    setOutage({ assignmentId, mode: "CUSTOM", replacementId: replacement?.id });
-    setOutageFrom(
-      toLocalDateTimeInput(
+    const nextFrom = toLocalDateTimeInput(
         replacement ? new Date(replacement.from) : start,
         settings.timezone,
-      ),
-    );
-    setOutageTo(
-      toLocalDateTimeInput(
+      ), nextTo = toLocalDateTimeInput(
         replacement
           ? new Date(replacement.to)
           : new Date(
@@ -1067,10 +1067,28 @@ function WeekCard({
               ),
             ),
         settings.timezone,
-      ),
-    );
+      );
+    setOutage({ assignmentId, mode: "CUSTOM", replacementId: replacement?.id });
+    setOutageFrom(nextFrom);
+    setOutageTo(nextTo);
     setOutageReason(replacement?.reason ?? "");
+    setOutageReplacementMemberId(replacement?.replacementMemberId ?? "");
   };
+  useEffect(() => {
+    if (!outage || outage.mode === "REPLACE") return;
+    const from = fromLocalDateTimeInput(outageFrom, settings.timezone), to = outage.mode === "UNTIL_END" ? new Date(service.to) : fromLocalDateTimeInput(outageTo, settings.timezone);
+    if (!from || !to || from >= to) return;
+    const timer = window.setTimeout(async () => {
+      setReplacementCandidatesBusy(true);
+      try {
+        const params = new URLSearchParams({ assignmentId:outage.assignmentId, from:from.toISOString(), to:to.toISOString() });
+        if(outage.replacementId)params.set("ignoreReplacementId",outage.replacementId);
+        const response=await fetch(`/api/services/${service.id}/replacement-candidates?${params}`),body=await response.json();
+        if(response.ok)setReplacementCandidates(body.candidates);else setReplacementCandidates([]);
+      } finally { setReplacementCandidatesBusy(false); }
+    },250);
+    return()=>window.clearTimeout(timer);
+  },[outage,outageFrom,outageTo,service.id,service.to,settings.timezone]);
   const ids = service.crew.map(
       (item) => draft[key(item.roleKey, item.slot)] ?? item.memberId,
     ),
@@ -1154,6 +1172,7 @@ function WeekCard({
         from: from.toISOString(),
         to: to.toISOString(),
         reason: outageReason,
+        replacementMemberId: outageReplacementMemberId || null,
       },
       outage.replacementId,
     );
@@ -1176,6 +1195,12 @@ function WeekCard({
     const payload = await response.json();
     if (!response.ok) { window.alert(payload.error ?? "Dočasnou sestavu se nepodařilo uložit."); return; }
     window.location.reload();
+  };
+  const createTemporaryCrewFromOutage = async () => {
+    const from=fromLocalDateTimeInput(outageFrom,settings.timezone),to=outage?.mode==="UNTIL_END"?new Date(service.to):fromLocalDateTimeInput(outageTo,settings.timezone);
+    if(!from||!to||from>=to)return;
+    setOutage(null);
+    await editTemporaryCrew({from:from.toISOString(),to:to.toISOString(),source:"MANUAL",reason:outageReason||"Ruční dočasná změna funkcí",assignments:service.crew.map((member)=>({id:`new-${member.assignmentId}`,memberId:member.memberId,name:member.name,roleKey:member.roleKey,slot:member.slot,originalAssignmentId:member.assignmentId}))});
   };
 
   return (
@@ -1644,6 +1669,14 @@ function WeekCard({
             {outage?.mode !== "REPLACE" && (
               <>
                 <label>
+                  Náhradník
+                  <select value={outageReplacementMemberId} onChange={(event)=>setOutageReplacementMemberId(event.target.value)}>
+                    <option value="">Automaticky vybrat</option>
+                    {replacementCandidates.map((candidate)=><option key={candidate.id} value={candidate.id} disabled={!candidate.eligible}>{candidate.name}{candidate.dt?" · DT":""}{candidate.eligible?" · dostupný":` · ${candidate.reason??"nelze vybrat"}`}</option>)}
+                  </select>
+                  <small>{replacementCandidatesBusy?"Ověřuji kandidáty pro zadaný interval…":outageReplacementMemberId?replacementCandidates.find((candidate)=>candidate.id===outageReplacementMemberId)?.warnings.join(" · ")||"Vybraný člen splňuje podmínky.":"Systém vybere vhodného náhradníka automaticky."}</small>
+                </label>
+                <label>
                   Od
                   <input
                     type="datetime-local"
@@ -1676,6 +1709,7 @@ function WeekCard({
             <Button variant="outline" onClick={() => setOutage(null)}>
               Zrušit
             </Button>
+            {outage?.mode!=="REPLACE"&&(selectedOutageMember?.roleKey==="COMMANDER"||selectedOutageMember?.roleKey==="DRIVER")&&<Button variant="outline" onClick={()=>void createTemporaryCrewFromOutage()}>Upravit dočasnou sestavu</Button>}
             <Button
               className="primary-action compact"
               onClick={() => void submitOutage()}
@@ -1684,7 +1718,7 @@ function WeekCard({
                 ? "Vybrat nového člena"
                 : outage?.replacementId
                   ? "Uložit změny"
-                  : "Najít a uložit náhradníka"}
+                  : outageReplacementMemberId ? "Uložit záskok" : "Najít a uložit náhradníka"}
             </Button>
           </DialogFooter>
         </DialogContent>

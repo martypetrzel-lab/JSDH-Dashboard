@@ -6,14 +6,14 @@ import { getPrisma } from '@/lib/prisma';
 import { serializeWeeklyService } from '@/lib/weekly-service-data';
 
 export const runtime='nodejs';
-const schema=z.object({assignmentId:z.string().min(1),from:z.iso.datetime(),to:z.iso.datetime(),reason:z.string().trim().max(500).optional().default('')});
+const schema=z.object({assignmentId:z.string().min(1),from:z.iso.datetime(),to:z.iso.datetime(),reason:z.string().trim().max(500).optional().default(''),replacementMemberId:z.string().min(1).nullable().optional()});
 const include={assignments:{orderBy:[{role:'asc' as const},{slot:'asc' as const}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc' as const}},temporaryAssignments:{include:{member:true},orderBy:[{from:'asc' as const},{role:'asc' as const},{slot:'asc' as const}]}};
 
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){
   if(!(await requireAdminApi()))return NextResponse.json({error:'Nepřihlášený přístup.'},{status:401});
   try{
     const {id}=await context.params,input=schema.parse(await request.json()),from=new Date(input.from),to=new Date(input.to);
-    const {service,assignment,selected,issue}=await prepareEmergencyReplacement(id,input.assignmentId,from,to);
+    const {service,assignment,selected,issue}=await prepareEmergencyReplacement(id,input.assignmentId,from,to,undefined,input.replacementMemberId);
     const prisma=getPrisma();
     await prisma.$transaction(async tx=>{
       await tx.serviceReplacement.create({data:{serviceId:id,assignmentId:assignment.id,originalMemberId:assignment.memberId,replacementMemberId:selected?.id??null,role:assignment.role,from,to,valid:!!selected,issue,reason:input.reason||null,source:'MANUAL'}});

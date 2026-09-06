@@ -6,18 +6,19 @@ import { getPrisma } from '@/lib/prisma';
 import { serializeWeeklyService } from '@/lib/weekly-service-data';
 
 export const runtime='nodejs';
-const schema=z.object({from:z.iso.datetime(),to:z.iso.datetime(),reason:z.string().trim().max(500).optional().default('')});
+const schema=z.object({from:z.iso.datetime(),to:z.iso.datetime(),reason:z.string().trim().max(500).optional().default(''),replacementMemberId:z.string().min(1).nullable().optional()});
 const include={assignments:{orderBy:[{role:'asc' as const},{slot:'asc' as const}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc' as const}},temporaryAssignments:{include:{member:true},orderBy:[{from:'asc' as const},{role:'asc' as const},{slot:'asc' as const}]}};
 
 export async function PATCH(request:Request,context:{params:Promise<{id:string;replacementId:string}>}){
   if(!(await requireAdminApi()))return NextResponse.json({error:'Nepřihlášený přístup.'},{status:401});
   try{
     const {id,replacementId}=await context.params,input=schema.parse(await request.json()),prisma=getPrisma(),record=await prisma.serviceReplacement.findUnique({where:{id:replacementId},include:{replacementMember:true}});
-    if(!record||record.serviceId!==id||record.source!=='MANUAL')return NextResponse.json({error:'Ruční záskok nebyl nalezen.'},{status:404});
-    const from=new Date(input.from),to=new Date(input.to),{assignment,selected,issue}=await prepareEmergencyReplacement(id,record.assignmentId,from,to,replacementId);
+    if(!record||record.serviceId!==id)return NextResponse.json({error:'Záskok nebyl nalezen.'},{status:404});
+    const from=new Date(input.from),to=new Date(input.to),{service,assignment,selected,issue}=await prepareEmergencyReplacement(id,record.assignmentId,from,to,replacementId,input.replacementMemberId),otherInvalid=await prisma.serviceReplacement.count({where:{serviceId:id,id:{not:replacementId},valid:false}});
     await prisma.$transaction([
-      prisma.serviceReplacement.update({where:{id:replacementId},data:{originalMemberId:assignment.memberId,replacementMemberId:selected?.id??null,role:assignment.role,from,to,valid:!!selected,issue,reason:input.reason||null}}),
+      prisma.serviceReplacement.update({where:{id:replacementId},data:{originalMemberId:assignment.memberId,replacementMemberId:selected?.id??null,role:assignment.role,from,to,valid:!!selected,issue,reason:input.reason||null,source:'MANUAL'}}),
       prisma.auditLog.create({data:{action:'TEMP_REPLACEMENT_CHANGED',entity:'WeeklyService',entityId:id,description:`Role ${assignment.role}; původní náhradník: ${record.replacementMember?`${record.replacementMember.firstName} ${record.replacementMember.lastName}`:'nenalezen'}; nový náhradník: ${selected?.name??'nenalezen'}; od: ${from.toISOString()}; do: ${to.toISOString()}; důvod: ${input.reason||'neuveden'}.`,actor:'Administrátor'}}),
+      ...(selected&&otherInvalid===0&&service.crewIssue?.includes('nepodařilo se automaticky sestavit náhradní posádku')?[prisma.weeklyService.update({where:{id},data:{needsCrewChange:false,crewIssue:null}})]:[]),
     ]);
     const updated=await prisma.weeklyService.findUniqueOrThrow({where:{id},include});
     return NextResponse.json({service:serializeWeeklyService(updated),resolved:!!selected});

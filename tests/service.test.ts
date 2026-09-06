@@ -534,6 +534,20 @@ test("náhradník musí mít správné oprávnění", () => {
     );
   assert.equal(planned[0].valid, false);
 });
+test("kandidát záskoku se validuje jen pro konkrétní interval, ne celý týden", () => {
+  const commander=base("v",["COMMANDER"],true),driver=base("s",["DRIVER"]),firefighter=base("h",["FIREFIGHTER"]),missing=base("chybi",["FIREFIGHTER"]),candidate=base("nahradnik",["FIREFIGHTER"]);
+  candidate.unavailable=[{from:new Date("2026-09-11T04:00:00Z"),to:new Date("2026-09-12T04:00:00Z")}];
+  const assignments:Assignment[]=[{role:"COMMANDER",member:commander,mode:"AUTO"},{role:"DRIVER",member:driver,mode:"AUTO"},{role:"FIREFIGHTER",member:firefighter,mode:"AUTO"},{role:"FIREFIGHTER",member:missing,mode:"AUTO"}];
+  assert.ok(replacementCandidates(assignments,3,[candidate],new Date("2026-09-08T04:00:00Z"),new Date("2026-09-09T04:00:00Z"),1).some((item)=>item.id===candidate.id));
+  assert.equal(replacementCandidates(assignments,3,[candidate],new Date("2026-09-11T04:00:00Z"),new Date("2026-09-12T04:00:00Z"),1).length,0);
+});
+
+test("API a dialog podporují automatickou i ruční volbu náhradníka",()=>{
+  const create=readFileSync("app/api/services/[id]/replacements/route.ts","utf8"),edit=readFileSync("app/api/services/[id]/replacements/[replacementId]/route.ts","utf8"),helper=readFileSync("lib/emergency-replacement-server.ts","utf8"),ui=readFileSync("app/weekly-planning-module.tsx","utf8");
+  assert.match(create,/replacementMemberId/);assert.match(edit,/replacementMemberId/);assert.match(edit,/TEMP_REPLACEMENT_CHANGED/);
+  assert.match(helper,/requestedMemberId/);assert.match(helper,/recurringOccurrences\(rule, from, to\)/);assert.match(helper,/busyIds/);
+  assert.match(ui,/Automaticky vybrat/);assert.match(ui,/replacement-candidates/);assert.match(ui,/Upravit dočasnou sestavu/);
+});
 test("DT náhradníka závisí na celé výsledné čtveřici", () => {
   const original = base("h1", ["FIREFIGHTER"], true),
     assignments = [
