@@ -24,17 +24,16 @@ Lokální adresa je `http://localhost:3000`. Soubor `.env.local` je ignorovaný 
 
 ## Přihlášení administrátora
 
-Aplikace používá uživatelské jméno z `ADMIN_USERNAME` a bcrypt hash z `ADMIN_PASSWORD_HASH`. Heslo v otevřeném textu není součástí zdrojového kódu.
+Aplikace používá uživatelské jméno z `ADMIN_USERNAME` a heslo z `ADMIN_PASSWORD`. Obě hodnoty načítá a porovnává výhradně server; heslo se neposílá do frontendového JavaScriptu ani se neloguje.
 
-Bezpečné vytvoření hashe v PowerShellu:
+Na Railway nastavte:
 
-```powershell
-$env:JSDH_PASSWORD = Read-Host "Zadejte heslo"
-npm run auth:hash
-Remove-Item Env:JSDH_PASSWORD
+```text
+ADMIN_USERNAME=HasiciNehvizdy
+ADMIN_PASSWORD=<vaše zvolené heslo>
 ```
 
-Výstup zkopírujte jako hodnotu `ADMIN_PASSWORD_HASH`. Pro `SESSION_SECRET` použijte náhodný řetězec o délce alespoň 32 znaků, například výstup správce hesel. Přihlašovací cookie je `HttpOnly`, v produkci `Secure`, používá `SameSite=Lax` a serverové relace jsou uložené v PostgreSQL.
+Heslo je uložené pouze jako Railway environment variable a nikdy nesmí být součástí Git repository. Pro `SESSION_SECRET` použijte jiný náhodný řetězec o délce alespoň 32 znaků. Přihlašovací cookie je `HttpOnly`, v produkci `Secure`, používá `SameSite=Lax` a serverové relace jsou uložené v PostgreSQL. Opakované neúspěšné pokusy omezuje databázová ochrana `LoginAttempt`.
 
 ## Databáze a soukromí
 
@@ -62,7 +61,7 @@ Health check je dostupný na `/api/health`. Vrací pouze stav služby a žádné
 3. Do projektu přidejte službu PostgreSQL.
 4. U webové služby nastavte `DATABASE_URL` jako referenci na připojovací URL PostgreSQL.
 5. Nastavte `ADMIN_USERNAME`.
-6. Nastavte `ADMIN_PASSWORD_HASH` na lokálně vytvořený bcrypt hash.
+6. Nastavte `ADMIN_PASSWORD` na zvolené heslo prostřednictvím Railway Variables.
 7. Nastavte náhodný `SESSION_SECRET` o délce alespoň 32 znaků.
 8. Nastavte `TZ=Europe/Prague`.
 9. Jako **Pre-deploy Command** ponechte `npx prisma migrate deploy`.
@@ -75,7 +74,7 @@ Soubor `railway.toml` nastavuje Railpack, build, bezpečné nasazení migrací, 
 
 - `DATABASE_URL`
 - `ADMIN_USERNAME`
-- `ADMIN_PASSWORD_HASH`
+- `ADMIN_PASSWORD`
 - `SESSION_SECRET`
 - `TZ`
 

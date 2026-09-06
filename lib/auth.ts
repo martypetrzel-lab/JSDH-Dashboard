@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { compare } from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getPrisma } from '@/lib/prisma';
 import { getRuntimeEnv } from '@/lib/runtime-env';
+import { constantTimeEqual } from '@/lib/secure-compare';
 
 const COOKIE_NAME = 'jsdh_admin_session';
 const SESSION_HOURS = 12;
@@ -14,8 +14,8 @@ function sessionHash(token: string, secret: string) {
 
 export async function authenticateAdmin(username: string, password: string) {
   const env = getRuntimeEnv();
-  const usernameMatches = username === env.ADMIN_USERNAME;
-  const passwordMatches = await compare(password, env.ADMIN_PASSWORD_HASH);
+  const usernameMatches = constantTimeEqual(username, env.ADMIN_USERNAME);
+  const passwordMatches = constantTimeEqual(password, env.ADMIN_PASSWORD);
   return usernameMatches && passwordMatches ? env.ADMIN_USERNAME : null;
 }
 

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assembleCrew, eligibility, intervalsOverlap, medicalValidUntil, serviceWeek, validateCrew, weightedPick, type Assignment, type Candidate, type Role } from '../lib/service.ts';
+import { constantTimeEqual } from '../lib/secure-compare.ts';
 
 const base=(id:string,roles:Role[],dt=false):Candidate=>({id,name:id,active:true,system:false,reserveOnly:false,dt,medicalExam:new Date(2026,6,1),roles,serviceCount:0,lastService:null});
 const week={start:new Date('2026-09-07T04:00:00.000Z'),end:new Date('2026-09-13T04:00:00.000Z')};
@@ -19,3 +20,4 @@ test('bez DT nelze posádku potvrdit',()=>{const a:Assignment[]=[['COMMANDER',ba
 test('backtracking uchová jediného velitele pro pozici velitele',()=>{const people=[base('kriticky',['COMMANDER','FIREFIGHTER'],true),base('s',['DRIVER']),base('h1',['FIREFIGHTER']),base('h2',['FIREFIGHTER'])];const result=assembleCrew(people,week.start,week.end,()=>.4);assert.equal(result?.find(a=>a.role==='COMMANDER')?.member.id,'kriticky');});
 test('weighted random vrátí kandidáta',()=>assert.equal(weightedPick([base('a',['FIREFIGHTER'])],()=>.5).id,'a'));
 test('ruční neplatná změna je znovu odmítnuta validací',()=>assert.equal(validateCrew([]).valid,false));
+test('serverové porovnání přihlašovacích hodnot rozliší shodu',()=>{assert.equal(constantTimeEqual('spravne-heslo','spravne-heslo'),true);assert.equal(constantTimeEqual('spatne-heslo','spravne-heslo'),false);});
