@@ -86,7 +86,7 @@ type ReplacementInput = {
   reason: string;
   replacementMemberId?: string | null;
 };
-type ReplacementCandidate = { id:string; name:string; dt:boolean; eligible:boolean; warnings:string[]; reason:string|null };
+type ReplacementCandidate = { id:string; name:string; dt:boolean; eligible:boolean; warnings:string[]; reason:string|null; blockingIntervals:{type:"UNAVAILABILITY"|"RECURRING";from:string;to:string}[] };
 type FutureActionKind = "DELETE_FROM" | "REGENERATE_FROM" | "REGENERATE_MONTH";
 
 const monthValue = (date = new Date(), timeZone = "Europe/Prague") =>
@@ -1069,6 +1069,7 @@ function WeekCard({
         settings.timezone,
       );
     setOutage({ assignmentId, mode: "CUSTOM", replacementId: replacement?.id });
+    setReplacementCandidates([]);
     setOutageFrom(nextFrom);
     setOutageTo(nextTo);
     setOutageReason(replacement?.reason ?? "");
@@ -1078,16 +1079,18 @@ function WeekCard({
     if (!outage || outage.mode === "REPLACE") return;
     const from = fromLocalDateTimeInput(outageFrom, settings.timezone), to = outage.mode === "UNTIL_END" ? new Date(service.to) : fromLocalDateTimeInput(outageTo, settings.timezone);
     if (!from || !to || from >= to) return;
+    let cancelled=false;
     const timer = window.setTimeout(async () => {
+      setReplacementCandidates([]);
       setReplacementCandidatesBusy(true);
       try {
         const params = new URLSearchParams({ assignmentId:outage.assignmentId, from:from.toISOString(), to:to.toISOString() });
         if(outage.replacementId)params.set("ignoreReplacementId",outage.replacementId);
         const response=await fetch(`/api/services/${service.id}/replacement-candidates?${params}`),body=await response.json();
-        if(response.ok)setReplacementCandidates(body.candidates);else setReplacementCandidates([]);
-      } finally { setReplacementCandidatesBusy(false); }
+        if(!cancelled&&response.ok)setReplacementCandidates(body.candidates);
+      } finally { if(!cancelled)setReplacementCandidatesBusy(false); }
     },250);
-    return()=>window.clearTimeout(timer);
+    return()=>{cancelled=true;window.clearTimeout(timer)};
   },[outage,outageFrom,outageTo,service.id,service.to,settings.timezone]);
   const ids = service.crew.map(
       (item) => draft[key(item.roleKey, item.slot)] ?? item.memberId,
@@ -1615,11 +1618,11 @@ function WeekCard({
                 value={outage?.assignmentId ?? ""}
                 disabled={!!outage?.replacementId}
                 onChange={(event) =>
-                  setOutage((current) =>
+                  {setReplacementCandidates([]);setOutage((current) =>
                     current
                       ? { ...current, assignmentId: event.target.value }
                       : current,
-                  )
+                  )}
                 }
               >
                 {service.crew.map((member) => (
@@ -1674,14 +1677,14 @@ function WeekCard({
                     <option value="">Automaticky vybrat</option>
                     {replacementCandidates.map((candidate)=><option key={candidate.id} value={candidate.id} disabled={!candidate.eligible}>{candidate.name}{candidate.dt?" · DT":""}{candidate.eligible?" · dostupný":` · ${candidate.reason??"nelze vybrat"}`}</option>)}
                   </select>
-                  <small>{replacementCandidatesBusy?"Ověřuji kandidáty pro zadaný interval…":outageReplacementMemberId?replacementCandidates.find((candidate)=>candidate.id===outageReplacementMemberId)?.warnings.join(" · ")||"Vybraný člen splňuje podmínky.":"Systém vybere vhodného náhradníka automaticky."}</small>
+                  <small>{replacementCandidatesBusy?"Ověřuji kandidáty pro zadaný interval…":outageReplacementMemberId?(()=>{const candidate=replacementCandidates.find((item)=>item.id===outageReplacementMemberId);const intervals=candidate?.blockingIntervals.map((period)=>`${formatServiceDateTime(new Date(period.from),settings.timezone)} → ${formatServiceDateTime(new Date(period.to),settings.timezone)}`).join(" · ");return[candidate?.warnings.join(" · "),intervals].filter(Boolean).join(" · ")||"Vybraný člen splňuje podmínky."})():"Systém vybere vhodného náhradníka automaticky."}</small>
                 </label>
                 <label>
                   Od
                   <input
                     type="datetime-local"
                     value={outageFrom}
-                    onChange={(event) => setOutageFrom(event.target.value)}
+                    onChange={(event) => {setReplacementCandidates([]);setOutageFrom(event.target.value)}}
                   />
                 </label>
                 {outage?.mode === "CUSTOM" && (
@@ -1690,7 +1693,7 @@ function WeekCard({
                     <input
                       type="datetime-local"
                       value={outageTo}
-                      onChange={(event) => setOutageTo(event.target.value)}
+                    onChange={(event) => {setReplacementCandidates([]);setOutageTo(event.target.value)}}
                     />
                   </label>
                 )}

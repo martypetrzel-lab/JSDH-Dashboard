@@ -1,5 +1,5 @@
 import { getPrisma } from "./prisma";
-import { DEFAULT_SERVICE_SETTINGS, eligibility, intervalsOverlap, replacementCandidates, replacementIntervalWarnings, weightedPick, type Assignment, type Candidate, type Role } from "./service";
+import { DEFAULT_SERVICE_SETTINGS, eligibility, getReplacementAvailability, intervalsOverlap, replacementCandidates, weightedPick, type Assignment, type Candidate, type ReplacementBlockingInterval, type Role } from "./service";
 import { toPlanningCandidates } from "./service-candidates";
 
 export async function prepareEmergencyReplacement(
@@ -32,20 +32,24 @@ export async function prepareEmergencyReplacement(
   const index = service.assignments.findIndex((item) => item.id === assignmentId);
   const busyIds = new Set(service.replacements.filter((item) => item.id !== ignoreReplacementId && item.replacementMemberId && intervalsOverlap(item.from, item.to, from, to)).map((item) => item.replacementMemberId!));
   for(const item of service.temporaryAssignments)if(intervalsOverlap(item.from,item.to,from,to))busyIds.add(item.memberId);
-  const nonRecurring = candidates.filter((candidate) => !busyIds.has(candidate.id) && replacementIntervalWarnings(candidate, from, to).length === 0);
+  const availabilityById = new Map(candidates.map((candidate) => [candidate.id, getReplacementAvailability(candidate, from, to)]));
+  const nonRecurring = candidates.filter((candidate) => !busyIds.has(candidate.id) && availabilityById.get(candidate.id)!.available).map((candidate) => ({ ...candidate, unavailable: [], recurringUnavailable: [] }));
   const valid = replacementCandidates(assignments, index, nonRecurring, from, to, settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt);
   const validIds = new Set(valid.map((candidate) => candidate.id));
   const baseIds = new Set(service.assignments.map((item) => item.memberId));
   const options = candidates.map((candidate) => {
     const reasons: string[] = [];
+    const blockingIntervals: ReplacementBlockingInterval[] = [];
     if (candidate.id === assignment.memberId) reasons.push("Původní vypadlý člen nemůže zastupovat sám sebe.");
     else if (baseIds.has(candidate.id)) reasons.push("Člen už je v tomto čase v základní posádce.");
     const check = eligibility({ ...candidate, unavailable: [] }, assignment.role as Role, from, to);
     reasons.push(...check.reasons);
-    reasons.push(...replacementIntervalWarnings(candidate, from, to));
+    const availability = availabilityById.get(candidate.id)!;
+    if (availability.blockingUnavailability) { reasons.push("Nahlášená nedostupnost"); blockingIntervals.push({ type: "UNAVAILABILITY", ...availability.blockingUnavailability }); }
+    if (availability.blockingRecurring) { reasons.push("Pracovní směna 24/48 v tomto intervalu"); blockingIntervals.push({ type: "RECURRING", ...availability.blockingRecurring }); }
     if (busyIds.has(candidate.id)) reasons.push("V tomto čase už zastupuje jinou pozici.");
     if (!reasons.length && !validIds.has(candidate.id)) reasons.push(`Po této změně by sestava nesplnila minimum ${settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt} DT.`);
-    return { id: candidate.id, name: candidate.name, dt: candidate.dt, eligible: reasons.length === 0, warnings: [...new Set(reasons)], reason: reasons[0] ?? null };
+    return { id: candidate.id, name: candidate.name, dt: candidate.dt, eligible: reasons.length === 0, warnings: [...new Set(reasons)], reason: reasons[0] ?? null, blockingIntervals: blockingIntervals.map((period) => ({ type: period.type, from: period.from.toISOString(), to: period.to.toISOString() })) };
   }).sort((left, right) => Number(right.eligible) - Number(left.eligible) || left.name.localeCompare(right.name, "cs"));
 
   let selected: Candidate | null;

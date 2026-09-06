@@ -12,6 +12,7 @@ import {
   emergencyReplacementEnd,
   fromLocalDateTimeInput,
   futureRangeNeedsConfirmation,
+  getReplacementAvailability,
   hardUnavailabilityIssue,
   intervalsOverlap,
   manualSelectionModes,
@@ -547,6 +548,14 @@ test("Jan Poppel není blokovaný nedostupností, která začne až po záskoku"
   const warnings=replacementIntervalWarnings(jan,new Date("2026-08-07T04:00:00Z"),new Date("2026-08-09T21:59:00Z"));
   assert.equal(warnings.includes("Nahlášená nedostupnost"),false);
 });
+test("replacement availability vrací konkrétní blokující DB interval a respektuje hranice",()=>{
+  const jan=base("jan-poppel",["FIREFIGHTER"]),blocked={from:new Date("2026-08-14T04:00:00Z"),to:new Date("2026-08-15T04:00:00Z")};jan.unavailable=[blocked];
+  assert.deepEqual(getReplacementAvailability(jan,new Date("2026-08-07T04:00:00Z"),new Date("2026-08-09T21:59:00Z")),{available:true,blockingUnavailability:null,blockingRecurring:null});
+  assert.deepEqual(getReplacementAvailability(jan,new Date("2026-09-07T04:00:00Z"),new Date("2026-09-09T21:59:00Z")),{available:true,blockingUnavailability:null,blockingRecurring:null});
+  assert.equal(getReplacementAvailability(jan,new Date("2026-08-14T08:00:00Z"),new Date("2026-08-14T18:00:00Z")).blockingUnavailability,blocked);
+  assert.equal(getReplacementAvailability(jan,blocked.to,new Date(blocked.to.getTime()+3600000)).available,true);
+  assert.equal(getReplacementAvailability(jan,new Date(blocked.from.getTime()-3600000),blocked.from).available,true);
+});
 test("Jan Poppel je blokovaný pouze při skutečném překryvu záskoku",()=>{
   const jan=base("jan-poppel",["FIREFIGHTER"]);jan.name="Jan Poppel";jan.unavailable=[{from:new Date("2026-08-08T10:00:00Z"),to:new Date("2026-08-09T10:00:00Z")}];
   assert.deepEqual(replacementIntervalWarnings(jan,new Date("2026-08-07T04:00:00Z"),new Date("2026-08-09T21:59:00Z")),["Nahlášená nedostupnost"]);
@@ -555,7 +564,7 @@ test("Jan Poppel je blokovaný pouze při skutečném překryvu záskoku",()=>{
 test("API a dialog podporují automatickou i ruční volbu náhradníka",()=>{
   const create=readFileSync("app/api/services/[id]/replacements/route.ts","utf8"),edit=readFileSync("app/api/services/[id]/replacements/[replacementId]/route.ts","utf8"),helper=readFileSync("lib/emergency-replacement-server.ts","utf8"),ui=readFileSync("app/weekly-planning-module.tsx","utf8");
   assert.match(create,/replacementMemberId/);assert.match(edit,/replacementMemberId/);assert.match(edit,/TEMP_REPLACEMENT_CHANGED/);
-  assert.match(helper,/requestedMemberId/);assert.match(helper,/replacementIntervalWarnings\(candidate, from, to\)/);assert.match(helper,/busyIds/);
+  assert.match(helper,/requestedMemberId/);assert.match(helper,/getReplacementAvailability\(candidate, from, to\)/);assert.match(helper,/blockingIntervals/);assert.match(helper,/busyIds/);
   assert.match(ui,/Automaticky vybrat/);assert.match(ui,/replacement-candidates/);assert.match(ui,/Upravit dočasnou sestavu/);
 });
 test("DT náhradníka závisí na celé výsledné čtveřici", () => {

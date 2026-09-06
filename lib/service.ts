@@ -448,10 +448,17 @@ export function eligibility(
     reasons.push("nahlášená nedostupnost");
   return { eligible: reasons.length === 0, reasons };
 }
+export type ReplacementBlockingInterval = { type: "UNAVAILABILITY" | "RECURRING"; from: Date; to: Date };
+export function getReplacementAvailability(member: Candidate, from: Date, to: Date) {
+  const validDate = (value: Date) => value instanceof Date && !Number.isNaN(value.getTime());
+  const blockingUnavailability = (member.unavailable ?? []).find((period) => validDate(period.from) && validDate(period.to) && intervalsOverlap(period.from, period.to, from, to)) ?? null;
+  const blockingRecurring = (member.recurringUnavailable ?? []).flatMap((rule) => validDate(rule.anchorStart) && rule.durationMinutes > 0 && rule.intervalMinutes > 0 ? recurringOccurrences(rule, from, to) : []).find((period) => intervalsOverlap(period.from, period.to, from, to)) ?? null;
+  return { available: !blockingUnavailability && !blockingRecurring, blockingUnavailability, blockingRecurring };
+}
 export function replacementIntervalWarnings(member: Candidate, from: Date, to: Date) {
-  const warnings: string[] = [];
-  if (member.unavailable?.some((period) => intervalsOverlap(period.from, period.to, from, to))) warnings.push("Nahlášená nedostupnost");
-  if (member.recurringUnavailable?.some((rule) => recurringOccurrences(rule, from, to).length > 0)) warnings.push("Pracovní směna 24/48 v tomto intervalu");
+  const availability = getReplacementAvailability(member, from, to), warnings: string[] = [];
+  if (availability.blockingUnavailability) warnings.push("Nahlášená nedostupnost");
+  if (availability.blockingRecurring) warnings.push("Pracovní směna 24/48 v tomto intervalu");
   return warnings;
 }
 export function weightedPick(candidates: Candidate[], random = Math.random) {
