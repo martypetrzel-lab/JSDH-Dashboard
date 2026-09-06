@@ -1080,17 +1080,20 @@ function WeekCard({
     const from = fromLocalDateTimeInput(outageFrom, settings.timezone), to = outage.mode === "UNTIL_END" ? new Date(service.to) : fromLocalDateTimeInput(outageTo, settings.timezone);
     if (!from || !to || from >= to) return;
     let cancelled=false;
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setReplacementCandidates([]);
       setReplacementCandidatesBusy(true);
       try {
         const params = new URLSearchParams({ assignmentId:outage.assignmentId, from:from.toISOString(), to:to.toISOString() });
         if(outage.replacementId)params.set("ignoreReplacementId",outage.replacementId);
-        const response=await fetch(`/api/services/${service.id}/replacement-candidates?${params}`),body=await response.json();
+        const response=await fetch(`/api/services/${service.id}/replacement-candidates?${params}`, { cache: "no-store", signal: controller.signal }),body=await response.json();
         if(!cancelled&&response.ok)setReplacementCandidates(body.candidates);
+      } catch (error) {
+        if (!cancelled && !(error instanceof DOMException && error.name === "AbortError")) setReplacementCandidates([]);
       } finally { if(!cancelled)setReplacementCandidatesBusy(false); }
     },250);
-    return()=>{cancelled=true;window.clearTimeout(timer)};
+    return()=>{cancelled=true;window.clearTimeout(timer);controller.abort()};
   },[outage,outageFrom,outageTo,service.id,service.to,settings.timezone]);
   const ids = service.crew.map(
       (item) => draft[key(item.roleKey, item.slot)] ?? item.memberId,
