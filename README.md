@@ -45,7 +45,7 @@ Heslo je uložené pouze jako Railway environment variable a nikdy nesmí být s
 
 Schéma je v `prisma/schema.prisma` a produkční migrace v `prisma/migrations/`. Obsahuje modely `Member`, `Unavailability`, `WeeklyService`, `WeeklyServiceAssignment`, `AuditLog`, `Settings`, `AdminSession`, `LoginAttempt` a `MedicalTemplate`.
 
-`npm run db:seed` vytvoří pouze technická nastavení a žádné členy. Volitelný příkaz `npm run db:seed:demo` vloží výhradně fiktivní osoby a je určený jen pro prázdnou vývojovou databázi. Reálná jména, data narození, zdravotní údaje a dokumenty patří pouze do neveřejné PostgreSQL databáze.
+`npm run db:seed` vytvoří pouze technická nastavení a žádné členy. Projekt neobsahuje demonstrační členy ani ukázkovou posádku; přehled zobrazuje výhradně potvrzenou službu uloženou v PostgreSQL. Reálná jména, data narození, zdravotní údaje a dokumenty patří pouze do neveřejné PostgreSQL databáze.
 
 Vzor lékařského posudku se nahrává v aplikaci v části **Zdravotní prohlídky**. Obsah souboru je uložený v PostgreSQL, nikoli v lokálním souborovém systému.
 

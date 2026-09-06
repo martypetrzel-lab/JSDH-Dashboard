@@ -15,8 +15,7 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed",
-    "db:seed:demo": "tsx prisma/seed-demo.ts"
+    "db:seed": "prisma db seed"
   },
   "dependencies": {
     "react": "19.2.6",
