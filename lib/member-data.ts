@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export type MemberRow = [name: string, role: string, medicalValidUntil: string, permissions: string, dt: string, id: string];
 export type AbsenceRow = { id: string; memberId: string; member: string; from: string; to: string; reason: string; label: string };
+export type RecurringAbsenceRow={id:string;memberId:string;member:string;anchorStart:string;durationMinutes:number;intervalMinutes:number;reason:string};
 
 export const memberInputSchema = z.object({
   name: z.string().trim().min(2).max(160),
@@ -17,6 +18,8 @@ export const unavailabilityInputSchema = z.object({
   to: z.iso.datetime(),
   reason: z.string().trim().max(500).optional().default(''),
 }).refine((value) => new Date(value.from) < new Date(value.to), { message: 'Konec musí být později než začátek.' });
+
+export const recurringUnavailabilityInputSchema=z.object({memberId:z.string().min(1),anchorStart:z.iso.datetime(),durationMinutes:z.number().int().min(1).max(10080),intervalMinutes:z.number().int().min(1).max(525600),reason:z.string().trim().max(500).optional().default('')}).refine(value=>value.intervalMinutes>=value.durationMinutes,{message:'Perioda musí být alespoň stejně dlouhá jako směna.'});
 
 export function splitName(name: string) {
   const parts = name.trim().replace(/\s+/g, ' ').split(' ');

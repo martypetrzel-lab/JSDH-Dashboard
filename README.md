@@ -16,6 +16,8 @@ Tlačítko **Navrhnout posádku** na stránce Týdenní služba načítá členy
 
 Stránka **Týdenní služba** umožňuje plánovat jeden vybraný týden, příští týden i všechny služby začínající ve zvoleném kalendářním měsíci. Měsíční generování postupuje chronologicky a každou nově navrženou posádku zahrne do férovosti následujících týdnů. Existující návrhy zachová a potvrzené služby nikdy nepřepisuje. Návrhy lze po týdnech upravit, přelosovat, odstranit a jednotlivě nebo hromadně potvrdit po nové serverové validaci.
 
+Opakované pracovní směny se evidují pomocí kotvy, délky a periody. Člena nevyřazují ze základní týdenní posádky; aplikace pro každý skutečný překryv dopočítá konkrétní časový záskok, preferuje stejného platného náhradníka pro více výpadků a kontroluje oprávnění, zdraví, dostupnost i DT celé výsledné čtveřice. Náhradníkovi se eviduje počet a délka záskoků, nikoli celá týdenní služba.
+
 ## Kondice a povinnosti
 
 Modul **Kondice a povinnosti** eviduje použití dýchací techniky aktivních členů s `dt=true` a měsíční jízdy všech aktivních členů s `canDrive=true`. Kondiční i zásahová událost se započítává stejně. Další termín DT je přesně tři kalendářní měsíce od nejnovější události; upozornění se standardně zobrazí 30 dní předem. Jízdy se vyhodnocují podle aktuálního kalendářního měsíce v `Europe/Prague`.

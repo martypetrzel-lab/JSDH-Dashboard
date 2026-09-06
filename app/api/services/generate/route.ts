@@ -4,6 +4,7 @@ import { requireAdminApi } from '@/lib/auth';
 import { getPrisma } from '@/lib/prisma';
 import { DEFAULT_FAIRNESS_SETTINGS, DEFAULT_SERVICE_SETTINGS, MISSING_DT_ERROR, assembleCrew, planningServiceWeek, type Candidate, type Role } from '@/lib/service';
 import { serializeWeeklyService } from '@/lib/weekly-service-data';
+import { syncServiceReplacements } from '@/lib/service-replacements-server';
 
 export const runtime = 'nodejs';
 const inputSchema=z.object({reference:z.iso.datetime().optional()});
@@ -35,7 +36,8 @@ export async function POST(request:Request){
       await tx.auditLog.create({data:{action:existing?'WEEK_REROLLED':'WEEK_DRAFT_CREATED',entity:'WeeklyService',entityId:service.id,description:'Automatický návrh týdenní posádky byl uložen.',actor:'Administrátor'}});
       return service.id;
     });
-    const service=await prisma.weeklyService.findUniqueOrThrow({where:{id:serviceId},include:{assignments:{orderBy:[{role:'asc'},{slot:'asc'}]}}});
+    await syncServiceReplacements(serviceId);
+    const service=await prisma.weeklyService.findUniqueOrThrow({where:{id:serviceId},include:{assignments:{orderBy:[{role:'asc'},{slot:'asc'}]},replacements:{include:{originalMember:true,replacementMember:true},orderBy:{from:'asc'}}}});
     return NextResponse.json({service:serializeWeeklyService(service)});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Návrh posádky se nepodařilo vytvořit.'},{status:400});}
 }

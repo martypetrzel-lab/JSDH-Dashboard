@@ -5,6 +5,8 @@ type WhatsAppCrew = {
   driver: string;
   firefighters: [string, string];
   dt: string[];
+  updated?: boolean;
+  replacements?: { originalName:string; replacementName:string; from:string; to:string }[];
   obligations?: {
     dt: { name: string; due: string | null; overdue: boolean }[];
     drivers: { name: string }[];
@@ -24,7 +26,7 @@ const ICON = {
 
 export function buildWhatsAppMessage(crew: WhatsAppCrew) {
   const lines = [
-    `${ICON.engine} JSDH NEHVIZDY – TÝDENNÍ SLUŽBA`,
+    `${ICON.engine} ${crew.updated?'AKTUALIZACE TÝDENNÍ SLUŽBY':'JSDH NEHVIZDY – TÝDENNÍ SLUŽBA'}`,
     '',
     `${ICON.calendar} ${crew.from} – ${crew.to}`,
     '',
@@ -37,6 +39,7 @@ export function buildWhatsAppMessage(crew: WhatsAppCrew) {
     '',
     `${ICON.check} Posádka 3+1 potvrzena.`,
   ];
+  if(crew.replacements?.length){lines.push('','\u{1F504} ZÁSKOKY');let current='';for(const item of crew.replacements){if(item.originalName!==current){lines.push('',`${item.originalName}:`);current=item.originalName}lines.push(`${item.from}–${item.to} → ${item.replacementName}`)}}
   if (crew.obligations) {
     lines.push('', '\u{26A0}\u{FE0F} POVINNOSTI');
     if (!crew.obligations.dt.length && !crew.obligations.drivers.length) lines.push('', `${ICON.check} Kondiční povinnosti jsou aktuálně splněny.`);

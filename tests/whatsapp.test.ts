@@ -25,3 +25,4 @@ void test('WhatsApp oznámí, že nejsou žádné povinnosti',()=>{
 });
 
 void test('měsíční WhatsApp plán je kompaktní',()=>{const message=buildMonthlyWhatsAppMessage('září 2026',[{from:'07.09.2026',to:'14.09.2026',commander:'Velitel',driver:'Strojník',firefighters:['Hasič A','Hasič B']}]);assert.match(message,/plán služeb září 2026/);assert.match(message,/07\.09–14\.09/);assert.match(message,/V: Velitel/);});
+void test('aktualizovaná WhatsApp zpráva obsahuje časové záskoky',()=>{const message=buildWhatsAppMessage({updated:true,from:'07.09.2026 06:00',to:'14.09.2026 06:00',commander:'Velitel',driver:'Strojník',firefighters:['Původní hasič','Hasič B'],dt:['Velitel'],replacements:[{originalName:'Původní hasič',replacementName:'Náhradník',from:'08.09.2026 06:00',to:'09.09.2026 06:00'}]});assert.match(message,/AKTUALIZACE TÝDENNÍ SLUŽBY/);assert.match(message,/🔄 ZÁSKOKY/);assert.match(message,/Původní hasič:/);assert.match(message,/→ Náhradník/);});

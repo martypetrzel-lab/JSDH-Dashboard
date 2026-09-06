@@ -67,6 +67,9 @@ model Member {
   assignments       WeeklyServiceAssignment[]
   dtActivities      DtActivity[]
   driverActivities  DriverActivity[]
+  recurringUnavailability RecurringUnavailability[]
+  replacementsAsOriginal ServiceReplacement[] @relation("ReplacementOriginal")
+  replacementsAsSubstitute ServiceReplacement[] @relation("ReplacementSubstitute")
 
   @@index([active])
   @@index([lastName, firstName])
@@ -118,6 +121,21 @@ model Unavailability {
   @@index([memberId, from, to])
 }
 
+model RecurringUnavailability {
+  id              String   @id @default(cuid())
+  memberId        String
+  anchorStart     DateTime
+  durationMinutes Int
+  intervalMinutes Int
+  reason          String?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  member          Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, active, anchorStart])
+}
+
 model WeeklyService {
   id          String                    @id @default(cuid())
   weekStart   DateTime                  @unique
@@ -127,6 +145,7 @@ model WeeklyService {
   createdAt   DateTime                  @default(now())
   updatedAt   DateTime                  @updatedAt
   assignments WeeklyServiceAssignment[]
+  replacements ServiceReplacement[]
 
   @@index([status, weekStart])
 }
@@ -144,10 +163,34 @@ model WeeklyServiceAssignment {
   createdAt     DateTime       @default(now())
   service       WeeklyService  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   member        Member         @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  replacements  ServiceReplacement[]
 
   @@unique([serviceId, role, slot])
   @@unique([serviceId, memberId])
   @@index([memberId])
+}
+
+model ServiceReplacement {
+  id                  String                  @id @default(cuid())
+  serviceId           String
+  assignmentId        String
+  originalMemberId    String
+  replacementMemberId String?
+  role                AssignmentRole
+  from                DateTime
+  to                  DateTime
+  valid               Boolean                 @default(false)
+  issue               String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  service             WeeklyService           @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  assignment          WeeklyServiceAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  originalMember      Member                  @relation("ReplacementOriginal", fields: [originalMemberId], references: [id], onDelete: Restrict)
+  replacementMember   Member?                 @relation("ReplacementSubstitute", fields: [replacementMemberId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, from, to])
+  @@index([serviceId, from, to])
+  @@index([replacementMemberId, from, to])
 }
 
 model AuditLog {
