@@ -461,6 +461,9 @@ export function replacementIntervalWarnings(member: Candidate, from: Date, to: D
   if (availability.blockingRecurring) warnings.push("Pracovní směna 24/48 v tomto intervalu");
   return warnings;
 }
+export function manualReplacementOverrideAllowed(member: Pick<Candidate, "system">) {
+  return !member.system;
+}
 export function weightedPick(candidates: Candidate[], random = Math.random) {
   const weights = candidates.map(
     (candidate) =>

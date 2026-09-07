@@ -85,6 +85,7 @@ type ReplacementInput = {
   to: string;
   reason: string;
   replacementMemberId?: string | null;
+  forceManualOverride?: boolean;
 };
 type ReplacementCandidate = { id:string; name:string; dt:boolean; eligible:boolean; warnings:string[]; reason:string|null; blockingIntervals:{type:"UNAVAILABILITY"|"RECURRING";from:string;to:string}[] };
 type FutureActionKind = "DELETE_FROM" | "REGENERATE_FROM" | "REGENERATE_MONTH";
@@ -1004,6 +1005,7 @@ function WeekCard({
   const [outageReplacementMemberId, setOutageReplacementMemberId] = useState("");
   const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
   const [replacementCandidatesBusy, setReplacementCandidatesBusy] = useState(false);
+  const [manualOverrideConfirmationOpen, setManualOverrideConfirmationOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmedAcknowledged, setConfirmedAcknowledged] = useState(false);
   const [knownDt, setKnownDt] = useState<Record<string, boolean>>(() =>
@@ -1151,7 +1153,7 @@ function WeekCard({
     }));
     setTarget(null);
   };
-  const submitOutage = async () => {
+  const submitOutage = async (warningsConfirmed = false) => {
     if (!outage) return;
     if (outage.mode === "REPLACE") {
       const member = service.crew.find(
@@ -1172,6 +1174,13 @@ function WeekCard({
     if (!from || !to || from >= to) {
       return;
     }
+    const manuallySelected = replacementCandidates.find(
+      (candidate) => candidate.id === outageReplacementMemberId,
+    );
+    if (manuallySelected?.warnings.length && !warningsConfirmed) {
+      setManualOverrideConfirmationOpen(true);
+      return;
+    }
     const success = await onSaveReplacement(
       {
         assignmentId: outage.assignmentId,
@@ -1179,6 +1188,7 @@ function WeekCard({
         to: to.toISOString(),
         reason: outageReason,
         replacementMemberId: outageReplacementMemberId || null,
+        forceManualOverride: Boolean(outageReplacementMemberId),
       },
       outage.replacementId,
     );
@@ -1329,7 +1339,7 @@ function WeekCard({
                           <Badge variant="outline">
                             {item.source === "RECURRING"
                               ? "Pracovní směna 24/48 · časový záskok"
-                              : "Časový záskok"}
+                              : "RUČNÍ ZÁSKOK"}
                           </Badge>
                           {formatServiceDateTime(
                             new Date(item.from),
@@ -1341,6 +1351,9 @@ function WeekCard({
                             settings.timezone,
                           )}
                           {item.reason && <small>{item.reason}</small>}
+                          {item.manualOverride && (
+                            <small>⚠ Ručně vynuceno</small>
+                          )}
                         </span>
                         <strong>
                           {item.replacementName ??
@@ -1678,7 +1691,7 @@ function WeekCard({
                   Náhradník
                   <select value={outageReplacementMemberId} onChange={(event)=>setOutageReplacementMemberId(event.target.value)}>
                     <option value="">Automaticky vybrat</option>
-                    {replacementCandidates.map((candidate)=><option key={candidate.id} value={candidate.id} disabled={!candidate.eligible}>{candidate.name}{candidate.dt?" · DT":""}{candidate.eligible?" · dostupný":` · ${candidate.reason??"nelze vybrat"}`}</option>)}
+                    {replacementCandidates.map((candidate)=><option key={candidate.id} value={candidate.id}>{candidate.name}{candidate.dt?" · DT":""}{candidate.eligible?" · dostupný":` · varování: ${candidate.reason??"standardní pravidla nesplněna"}`}</option>)}
                   </select>
                   <small>{replacementCandidatesBusy?"Ověřuji kandidáty pro zadaný interval…":outageReplacementMemberId?(()=>{const candidate=replacementCandidates.find((item)=>item.id===outageReplacementMemberId);const intervals=candidate?.blockingIntervals.map((period)=>`${formatServiceDateTime(new Date(period.from),settings.timezone)} → ${formatServiceDateTime(new Date(period.to),settings.timezone)}`).join(" · ");return[candidate?.warnings.join(" · "),intervals].filter(Boolean).join(" · ")||"Vybraný člen splňuje podmínky."})():"Systém vybere vhodného náhradníka automaticky."}</small>
                 </label>
@@ -1729,6 +1742,48 @@ function WeekCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={manualOverrideConfirmationOpen}
+        onOpenChange={setManualOverrideConfirmationOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Vybraný člen nesplňuje některá standardní pravidla.
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Varování slouží pouze jako informace. Ruční rozhodnutí administrátora
+              lze přesto uložit.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {(() => {
+            const candidate = replacementCandidates.find(
+              (item) => item.id === outageReplacementMemberId,
+            );
+            return candidate ? (
+              <div className="manual-override-warning">
+                <strong>{candidate.name}</strong>
+                <ul>
+                  {candidate.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null;
+          })()}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setManualOverrideConfirmationOpen(false);
+                void submitOutage(true);
+              }}
+            >
+              Přesto uložit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={deleteOpen}
         onOpenChange={(open) => {

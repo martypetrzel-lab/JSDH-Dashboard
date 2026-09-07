@@ -16,6 +16,7 @@ import {
   hardUnavailabilityIssue,
   intervalsOverlap,
   manualSelectionModes,
+  manualReplacementOverrideAllowed,
   medicalValidUntil,
   nextServiceWeek,
   planCoveredSegments,
@@ -566,6 +567,43 @@ test("API a dialog podporují automatickou i ruční volbu náhradníka",()=>{
   assert.match(create,/replacementMemberId/);assert.match(edit,/replacementMemberId/);assert.match(edit,/TEMP_REPLACEMENT_CHANGED/);
   assert.match(helper,/requestedMemberId/);assert.match(helper,/getReplacementAvailability\(candidate, from, to\)/);assert.match(helper,/blockingIntervals/);assert.match(helper,/busyIds/);
   assert.match(ui,/Automaticky vybrat/);assert.match(ui,/replacement-candidates/);assert.match(ui,/Upravit dočasnou sestavu/);
+});
+test("ruční override dovolí nedostupného člena i člena v pracovní směně",()=>{
+  const member=base("manual",["FIREFIGHTER"]),from=new Date("2026-09-08T04:00:00Z"),to=new Date("2026-09-08T16:00:00Z");
+  member.unavailable=[{from:new Date("2026-09-08T05:00:00Z"),to:new Date("2026-09-08T06:00:00Z")}];
+  member.recurringUnavailable=[{anchorStart:new Date("2026-09-08T04:00:00Z"),durationMinutes:60,intervalMinutes:4320}];
+  assert.equal(getReplacementAvailability(member,from,to).available,false);
+  assert.equal(manualReplacementOverrideAllowed(member),true);
+});
+test("ruční override dovolí člena bez oprávnění, DT, zdravotní i pouze na počet",()=>{
+  const member=base("manual",[],false);
+  member.medicalExam=null;member.medicalValidUntil=null;member.reserveOnly=true;member.active=false;
+  assert.equal(eligibility(member,"COMMANDER",week.start,week.end).eligible,false);
+  assert.equal(manualReplacementOverrideAllowed(member),true);
+});
+test("systémový účet zůstává zakázaný i pro ruční override",()=>{
+  const member=base("system",["FIREFIGHTER"]);member.system=true;
+  assert.equal(manualReplacementOverrideAllowed(member),false);
+});
+test("automatický záskok nadále používá přísná pravidla",()=>{
+  const original=base("original",["FIREFIGHTER"]),candidate=base("candidate",["DRIVER"],false);
+  candidate.unavailable=[{from:week.start,to:week.end}];
+  const assignments:Assignment[]=[
+    {role:"COMMANDER",member:base("commander",["COMMANDER"],true),mode:"AUTO"},
+    {role:"DRIVER",member:base("driver",["DRIVER"]),mode:"AUTO"},
+    {role:"FIREFIGHTER",member:base("firefighter",["FIREFIGHTER"]),mode:"AUTO"},
+    {role:"FIREFIGHTER",member:original,mode:"AUTO"},
+  ];
+  assert.deepEqual(replacementCandidates(assignments,3,[candidate],week.start,week.end,1),[]);
+});
+test("API ukládá vynucený záskok jako platný MANUAL override s auditem",()=>{
+  const create=readFileSync("app/api/services/[id]/replacements/route.ts","utf8"),edit=readFileSync("app/api/services/[id]/replacements/[replacementId]/route.ts","utf8"),helper=readFileSync("lib/emergency-replacement-server.ts","utf8"),ui=readFileSync("app/weekly-planning-module.tsx","utf8"),schema=readFileSync("prisma/schema.prisma","utf8");
+  assert.match(create,/forceManualOverride/);assert.match(edit,/forceManualOverride/);
+  assert.match(create,/TEMP_REPLACEMENT_MANUAL_OVERRIDE/);assert.match(edit,/TEMP_REPLACEMENT_MANUAL_OVERRIDE/);
+  assert.match(create,/manualOverride/);assert.match(edit,/manualOverride/);assert.match(schema,/manualOverride\s+Boolean\s+@default\(false\)/);
+  assert.match(helper,/!forceManualOverride && !option\.eligible/);assert.match(helper,/manualReplacementOverrideAllowed/);
+  assert.match(ui,/Vybraný člen nesplňuje některá standardní pravidla/);assert.match(ui,/forceManualOverride: Boolean\(outageReplacementMemberId\)/);assert.match(ui,/RUČNÍ ZÁSKOK/);assert.match(ui,/Ručně vynuceno/);
+  assert.doesNotMatch(ui,/replacementCandidates\.map\(\(candidate\)=>\s*<option[^>]*disabled=/);
 });
 test("DT náhradníka závisí na celé výsledné čtveřici", () => {
   const original = base("h1", ["FIREFIGHTER"], true),

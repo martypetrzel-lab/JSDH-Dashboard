@@ -243,6 +243,7 @@ model ServiceReplacement {
   issue               String?
   reason              String?
   source              ReplacementSource       @default(RECURRING)
+  manualOverride      Boolean                 @default(false)
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
   service             WeeklyService           @relation(fields: [serviceId], references: [id], onDelete: Cascade)

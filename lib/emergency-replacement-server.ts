@@ -1,5 +1,5 @@
 import { getPrisma } from "./prisma";
-import { DEFAULT_SERVICE_SETTINGS, eligibility, getReplacementAvailability, intervalsOverlap, replacementCandidates, weightedPick, type Assignment, type Candidate, type ReplacementBlockingInterval, type Role } from "./service";
+import { DEFAULT_SERVICE_SETTINGS, eligibility, getReplacementAvailability, intervalsOverlap, manualReplacementOverrideAllowed, replacementCandidates, weightedPick, type Assignment, type Candidate, type ReplacementBlockingInterval, type Role } from "./service";
 import { toPlanningCandidates } from "./service-candidates";
 
 export async function prepareEmergencyReplacement(
@@ -9,6 +9,7 @@ export async function prepareEmergencyReplacement(
   to: Date,
   ignoreReplacementId?: string,
   requestedMemberId?: string | null,
+  forceManualOverride = false,
 ) {
   const prisma = getPrisma();
   const [service, settings, members, history] = await Promise.all([
@@ -37,7 +38,7 @@ export async function prepareEmergencyReplacement(
   const valid = replacementCandidates(assignments, index, nonRecurring, from, to, settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt);
   const validIds = new Set(valid.map((candidate) => candidate.id));
   const baseIds = new Set(service.assignments.map((item) => item.memberId));
-  const options = candidates.map((candidate) => {
+  const options = candidates.filter(manualReplacementOverrideAllowed).map((candidate) => {
     const reasons: string[] = [];
     const blockingIntervals: ReplacementBlockingInterval[] = [];
     if (candidate.id === assignment.memberId) reasons.push("Původní vypadlý člen nemůže zastupovat sám sebe.");
@@ -56,8 +57,9 @@ export async function prepareEmergencyReplacement(
   if (requestedMemberId) {
     const requested = candidates.find((candidate) => candidate.id === requestedMemberId);
     if (!requested) throw new Error("Vybraný náhradník nebyl nalezen.");
+    if (!manualReplacementOverrideAllowed(requested)) throw new Error("Systémový účet nelze použít jako náhradníka.");
     const option = options.find((item) => item.id === requestedMemberId)!;
-    if (!option.eligible) {
+    if (!forceManualOverride && !option.eligible) {
       const roleLabel = assignment.role === "COMMANDER" ? "Velitel" : assignment.role === "DRIVER" ? "Strojník" : "Hasič";
       if (option.warnings.includes("chybí oprávnění")) throw new Error(`${requested.name} nemá oprávnění ${roleLabel}.`);
       if (option.warnings.includes("Nahlášená nedostupnost")) throw new Error(`${requested.name} je v tomto intervalu nedostupný.`);
@@ -68,5 +70,6 @@ export async function prepareEmergencyReplacement(
     selected = requested;
   } else selected = valid.length ? weightedPick(valid) : null;
   const roleName = assignment.role === "COMMANDER" ? "velitel" : assignment.role === "DRIVER" ? "strojník" : "hasič";
-  return { service, assignment, selected, issue: selected ? null : `Chybí náhradní ${roleName}.`, candidates: options };
+  const selectedWarnings = requestedMemberId ? options.find((item) => item.id === requestedMemberId)?.warnings ?? [] : [];
+  return { service, assignment, selected, issue: selected ? null : `Chybí náhradní ${roleName}.`, candidates: options, selectedWarnings };
 }

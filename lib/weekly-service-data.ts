@@ -12,6 +12,7 @@ export type DashboardReplacement = {
   issue: string | null;
   reason: string | null;
   source: 'RECURRING' | 'MANUAL';
+  manualOverride: boolean;
 };
 
 export type DashboardService = {
@@ -63,6 +64,7 @@ type SerializableService = {
     issue: string | null;
     reason?: string | null;
     source?: string;
+    manualOverride?: boolean;
     originalMember: { firstName: string; lastName: string };
     replacementMember: { firstName: string; lastName: string } | null;
   }[];
@@ -109,6 +111,7 @@ export function serializeWeeklyService(service: SerializableService): DashboardS
       issue: item.issue,
       reason: item.reason ?? null,
       source: item.source === 'MANUAL' ? 'MANUAL' : 'RECURRING',
+      manualOverride: item.manualOverride ?? false,
     })),
     temporaryCrews: [...new Map((service.temporaryAssignments ?? []).map((item) => {
       const key = `${item.from.toISOString()}|${item.to.toISOString()}`;
