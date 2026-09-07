@@ -71,6 +71,22 @@ test("aktivní záskok změní effective crew a DT, budoucí záskok nikoliv", (
   assert.equal(before[0].memberId, "m1");
   assert.equal(before.filter((item) => item.dt).length, 1);
 });
+test("potvrzená služba zachová v Integration API nevyřešený záskok jako valid false", () => {
+  const source = service();
+  source.needsCrewChange = true;
+  source.crewIssue = "Nepodařilo se automaticky sestavit náhradní posádku.";
+  source.replacements = [{
+    id: "unresolved", assignmentId: "a3", originalMemberId: "m3", replacementMemberId: null, role: "FIREFIGHTER",
+    from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), valid: false,
+    issue: "Nenalezen vhodný náhradník.", reason: null, source: "RECURRING",
+    originalMember: { firstName: "Třetí", lastName: "Člen" }, replacementMember: null,
+  }];
+  const at = new Date("2026-09-08T10:00:00Z"), crew = effectiveIntegrationCrew(source, at), serialized = serializeIntegrationService(source);
+  assert.equal(crew.find((item) => item.assignmentId === "a3")?.unresolvedReplacement, true);
+  assert.equal(serialized.status, "CONFIRMED");
+  assert.equal(serialized.replacements[0].valid, false);
+  assert.equal(serialized.replacements[0].replacementMemberId, null);
+});
 test("current crew vrací dočasné role bez duplicit", () => {
   const source = service();
   source.temporaryAssignments = [

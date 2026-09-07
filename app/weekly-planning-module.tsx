@@ -88,6 +88,10 @@ type ReplacementInput = {
   forceManualOverride?: boolean;
 };
 type ReplacementCandidate = { id:string; name:string; dt:boolean; eligible:boolean; warnings:string[]; reason:string|null; blockingIntervals:{type:"UNAVAILABILITY"|"RECURRING";from:string;to:string}[] };
+type UnresolvedConfirmation = {
+  service: DashboardService;
+  replacements: { id:string; originalName:string; from:string; to:string; issue:string|null }[];
+};
 type FutureActionKind = "DELETE_FROM" | "REGENERATE_FROM" | "REGENERATE_MONTH";
 
 const monthValue = (date = new Date(), timeZone = "Europe/Prague") =>
@@ -137,6 +141,7 @@ export function WeeklyPlanningModule({
   const [manualCandidates, setManualCandidates] = useState<ManualDraftCandidate[]>([]);
   const [manualMinimumDt, setManualMinimumDt] = useState(settings.minimumDt);
   const [manualSelection, setManualSelection] = useState<Record<string,string>>({});
+  const [unresolvedConfirmation, setUnresolvedConfirmation] = useState<UnresolvedConfirmation | null>(null);
   const [futureAction, setFutureAction] = useState<{
     kind: FutureActionKind;
     service: DashboardService;
@@ -251,16 +256,23 @@ export function WeeklyPlanningModule({
     } catch(error){notify(error instanceof Error?error.message:"Ruční návrh se nepodařilo uložit.");}
     finally{setBusy(false);}
   };
-  const confirm = async (target: DashboardService) => {
+  const confirm = async (target: DashboardService, allowUnresolvedReplacements = false) => {
     setBusy(true);
     try {
       const response = await fetch(`/api/services/${target.id}/confirm`, {
           method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ allowUnresolvedReplacements }),
         }),
         body = await response.json();
+      if (body.requiresOverrideConfirmation) {
+        setUnresolvedConfirmation({ service: target, replacements: body.unresolvedReplacements });
+        return;
+      }
       if (!response.ok) throw new Error(body.error);
       replaceEverywhere(body.service);
-      notify("Týdenní posádka byla potvrzena.");
+      setUnresolvedConfirmation(null);
+      notify(body.confirmedWithUnresolved ? "Služba byla potvrzena i s nevyřešeným záskokem." : "Týdenní posádka byla potvrzena.");
     } catch (error) {
       notify(
         error instanceof Error
@@ -735,6 +747,46 @@ export function WeeklyPlanningModule({
     </AlertDialog>
   );
 
+  const unresolvedConfirmationDialog = (
+    <AlertDialog
+      open={!!unresolvedConfirmation}
+      onOpenChange={(open) => { if (!open) setUnresolvedConfirmation(null); }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Služba obsahuje nevyřešený záskok.</AlertDialogTitle>
+          <AlertDialogDescription>
+            Opravdu chcete službu přesto potvrdit?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="unresolved-confirmation-list">
+          {unresolvedConfirmation?.replacements.map((replacement) => (
+            <div key={replacement.id}>
+              <strong>{replacement.originalName}</strong>
+              <span>
+                {formatServiceDateTime(new Date(replacement.from), settings.timezone)} →{' '}
+                {formatServiceDateTime(new Date(replacement.to), settings.timezone)}
+              </span>
+              <small>Náhradník zatím nebyl nalezen.</small>
+            </div>
+          ))}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Zrušit</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={busy}
+            onClick={(event) => {
+              event.preventDefault();
+              if (unresolvedConfirmation) void confirm(unresolvedConfirmation.service, true);
+            }}
+          >
+            Potvrdit i s nevyřešeným záskokem
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   const manualDraftDialog = (
     <Dialog open={manualOpen} onOpenChange={setManualOpen}>
       <DialogContent className="manual-crew-dialog">
@@ -833,6 +885,7 @@ export function WeeklyPlanningModule({
           </Button>
         </div>
         {futureDialog}
+        {unresolvedConfirmationDialog}
         {manualDraftDialog}
         <MonthDialog
           open={monthDialog}
@@ -924,6 +977,7 @@ export function WeeklyPlanningModule({
         </article>
       )}
       {futureDialog}
+      {unresolvedConfirmationDialog}
       {manualDraftDialog}
       <MonthDialog
         open={monthDialog}
@@ -1102,7 +1156,8 @@ function WeekCard({
     ),
     duplicate = new Set(ids).size !== ids.length,
     dtCount = ids.filter((id) => knownDt[id]).length,
-    invalid = duplicate || dtCount < settings.minimumDt || service.needsCrewChange;
+    hasUnresolvedReplacement = service.replacements.some((item) => !item.valid),
+    invalid = duplicate || dtCount < settings.minimumDt || (service.needsCrewChange && !hasUnresolvedReplacement);
   const crewValid =
     service.crew.length === 4 &&
     new Set(service.crew.map((item) => item.memberId)).size === 4 &&
@@ -1245,7 +1300,7 @@ function WeekCard({
         )}
         {service.status !== "CANCELLED" && service.needsCrewChange && (
           <div className="planning-error crew-change-required">
-            <strong>Vyžaduje změnu sestavy</strong>
+            <strong>{unresolvedReplacement ? "Vyžaduje záskok" : "Vyžaduje změnu sestavy"}</strong>
             <span>{service.crewIssue ?? "Člen základní sestavy je v tomto týdnu nedostupný."}</span>
             <span className="record-actions">
               <Button variant="outline" size="sm" onClick={() => unresolvedReplacement ? openOutage(unresolvedReplacement.assignmentId, unresolvedReplacement) : startEdit()}>{unresolvedReplacement ? "Vyřešit záskok" : "Nahradit člena"}</Button>
@@ -1391,7 +1446,20 @@ function WeekCard({
           })}
         </div>
         {service.status !== "CANCELLED" &&
-          (invalid ? (
+          (hasUnresolvedReplacement ? (
+            <div className="validation-box invalid">
+              <span>⚠</span>
+              <div>
+                <strong>Vyžaduje záskok</strong>
+                <span>
+                  {service.replacements
+                    .filter((item) => !item.valid)
+                    .map((item) => `${item.originalName}: ${item.issue}`)
+                    .join(" · ")}
+                </span>
+              </div>
+            </div>
+          ) : invalid ? (
             <div className="validation-box invalid">
               <span>⚠</span>
               <div>
@@ -1402,19 +1470,6 @@ function WeekCard({
                     : duplicate
                     ? "Stejná osoba je vybrána vícekrát."
                     : `Posádka nemá požadovaný počet ${settings.minimumDt} DT.`}
-                </span>
-              </div>
-            </div>
-          ) : service.replacements.some((item) => !item.valid) ? (
-            <div className="validation-box invalid">
-              <span>⚠</span>
-              <div>
-                <strong>Vyžaduje záskok</strong>
-                <span>
-                  {service.replacements
-                    .filter((item) => !item.valid)
-                    .map((item) => `${item.originalName}: ${item.issue}`)
-                    .join(" · ")}
                 </span>
               </div>
             </div>
@@ -1446,7 +1501,9 @@ function WeekCard({
                       ? "Strojník"
                       : "Hasič"}
                   :{" "}
-                  {member.replaced
+                  {member.unresolved
+                    ? `${member.name} – náhradník zatím nebyl nalezen`
+                    : member.replaced
                     ? `${member.originalName} → ${member.name}`
                     : member.name}
                 </span>
@@ -1538,9 +1595,7 @@ function WeekCard({
                   {service.status === "DRAFT" && (
                     <Button
                       className="primary-action compact"
-                      disabled={
-                        busy || service.replacements.some((item) => !item.valid)
-                      }
+                      disabled={busy}
                       onClick={onConfirm}
                     >
                       Potvrdit

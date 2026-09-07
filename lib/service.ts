@@ -146,8 +146,15 @@ export function serviceTimeline(
       to: new Date(to),
       crew: (() => {
         const temporary = relevantTemporary.filter((item) => item.from.getTime() <= from && item.to.getTime() >= to);
-        if (temporary.length === 4 && new Set(temporary.map((item) => item.memberId)).size === 4) return temporary.map((item) => ({ assignmentId: item.originalAssignmentId ?? item.id, role: item.role, memberId: item.memberId, name: item.name, replaced: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.memberId !== item.memberId, originalName: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.name ?? null }));
+        if (temporary.length === 4 && new Set(temporary.map((item) => item.memberId)).size === 4) return temporary.map((item) => ({ assignmentId: item.originalAssignmentId ?? item.id, role: item.role, memberId: item.memberId, name: item.name, replaced: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.memberId !== item.memberId, originalName: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.name ?? null, unresolved: false }));
         return crew.map((item) => {
+        const unresolved = relevant.find(
+          (candidate) =>
+            candidate.assignmentId === item.assignmentId &&
+            !candidate.valid &&
+            candidate.from.getTime() <= from &&
+            candidate.to.getTime() >= to,
+        );
         const replacement = relevant.find(
           (candidate) =>
             candidate.assignmentId === item.assignmentId &&
@@ -162,6 +169,7 @@ export function serviceTimeline(
           name: replacement?.replacementName ?? item.name,
           replaced: !!replacement,
           originalName: replacement ? item.name : null,
+          unresolved: !!unresolved,
         };
         });
       })(),

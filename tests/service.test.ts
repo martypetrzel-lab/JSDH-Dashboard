@@ -795,6 +795,32 @@ test("nevyřešený výpadek označí službu jako Vyžaduje záskok", () => {
     label: "Zrušena",
   });
 });
+test("nevyřešený záskok zůstává neplatný a je vidět v časové ose", () => {
+  const from = new Date("2026-09-08T04:00:00Z"), to = new Date("2026-09-09T04:00:00Z"),
+    timeline = serviceTimeline(week.start, week.end, [{ assignmentId: "a1", role: "FIREFIGHTER", memberId: "m1", name: "Petržel Martin" }], [{ assignmentId: "a1", replacementMemberId: null, replacementName: null, from, to, valid: false }]),
+    unresolved = timeline.find((segment) => segment.from.getTime() === from.getTime())!.crew[0];
+  assert.equal(unresolved.memberId, "m1");
+  assert.equal(unresolved.replaced, false);
+  assert.equal(unresolved.unresolved, true);
+});
+test("potvrzení služby vyžaduje explicitní override, ale neoznačí záskok jako platný", () => {
+  const route = readFileSync("app/api/services/[id]/confirm/route.ts", "utf8"), ui = readFileSync("app/weekly-planning-module.tsx", "utf8"), shareUi = readFileSync("app/service-app.tsx", "utf8"), replacementEdit = readFileSync("app/api/services/[id]/replacements/[replacementId]/route.ts", "utf8");
+  assert.match(route, /allowUnresolvedReplacements/);
+  assert.match(route, /requiresOverrideConfirmation: true/);
+  assert.match(route, /Služba obsahuje nevyřešený záskok/);
+  assert.match(route, /WEEK_CONFIRMED_WITH_UNRESOLVED_REPLACEMENT/);
+  assert.match(route, /Týdenní služba byla administrátorem potvrzena i přes nevyřešený záskok/);
+  assert.match(route, /where: \{ serviceId: id, valid: false \}/);
+  assert.doesNotMatch(route, /valid: true/);
+  assert.doesNotMatch(route, /missing\.length\)return NextResponse\.json\(\{error:/);
+  assert.match(ui, /Potvrdit i s nevyřešeným záskokem/);
+  assert.match(ui, /body: JSON\.stringify\(\{ allowUnresolvedReplacements \}\)/);
+  assert.doesNotMatch(ui, /disabled=\{\s*busy \|\| service\.replacements\.some\(\(item\) => !item\.valid\)/);
+  assert.match(shareUi, /target\.replacements\.map/);
+  assert.match(shareUi, /Náhradník zatím nebyl nalezen/);
+  assert.match(replacementEdit, /otherInvalid===0/);
+  assert.match(replacementEdit, /needsCrewChange:false,crewIssue:null/);
+});
 test("smazání odebere pouze vybraný týden a GET jej poté nenajde", () => {
   const services = [
       { id: "tyden-1", from: "a" },
