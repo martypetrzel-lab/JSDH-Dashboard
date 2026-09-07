@@ -821,6 +821,34 @@ test("potvrzení služby vyžaduje explicitní override, ale neoznačí záskok 
   assert.match(replacementEdit, /otherInvalid===0/);
   assert.match(replacementEdit, /needsCrewChange:false,crewIssue:null/);
 });
+test("ruční přehazování funkcí zachová členy a assignmentId bez kolize unikátních pozic", () => {
+  const route = readFileSync("app/api/services/[id]/roles/route.ts", "utf8");
+  assert.match(route, /COMMANDER-1/);
+  assert.match(route, /DRIVER-1/);
+  assert.match(route, /FIREFIGHTER-1/);
+  assert.match(route, /FIREFIGHTER-2/);
+  assert.match(route, /currentMemberIds/);
+  assert.match(route, /proposedMemberIds/);
+  assert.match(route, /data: \{ slot: 100 \+ index \}/);
+  assert.match(route, /where: \{ id: item\.saved\.id \}/);
+  assert.match(route, /roleSnapshot: item\.role/);
+  assert.match(route, /selectionMode: 'MANUAL'/);
+  assert.match(route, /CREW_ROLES_MANUALLY_CHANGED/);
+});
+test("přehazování funkcí zachová ruční záskoky a znovu spočítá pouze automatické", () => {
+  const route = readFileSync("app/api/services/[id]/roles/route.ts", "utf8"), ui = readFileSync("app/weekly-planning-module.tsx", "utf8");
+  assert.match(route, /serviceReplacement\.updateMany/);
+  assert.match(route, /data: \{ role: item\.role \}/);
+  assert.match(route, /source: 'RECURRING'/);
+  assert.doesNotMatch(route, /source: 'MANUAL'[^\n]*deleteMany/);
+  assert.match(route, /syncServiceReplacements\(id\)/);
+  assert.match(route, /confirmedServiceAcknowledged/);
+  assert.match(route, /nemá standardní oprávnění/);
+  assert.match(ui, /Přehodit funkce/);
+  assert.match(ui, /RUČNÍ ROZDĚLENÍ FUNKCÍ/);
+  assert.match(ui, /Měníte funkce v již potvrzené službě\. Pokračovat\?/);
+  assert.match(ui, /submitRoleChange\(true, true\)/);
+});
 test("smazání odebere pouze vybraný týden a GET jej poté nenajde", () => {
   const services = [
       { id: "tyden-1", from: "a" },

@@ -92,6 +92,8 @@ type UnresolvedConfirmation = {
   service: DashboardService;
   replacements: { id:string; originalName:string; from:string; to:string; issue:string|null }[];
 };
+type CrewRoleAssignment = { memberId: string; role: "COMMANDER" | "DRIVER" | "FIREFIGHTER"; slot: number };
+type CrewRoleSaveResult = { ok: boolean; requiresConfirmation?: boolean; requiresConfirmedAcknowledgement?: boolean; warnings?: string[] };
 type FutureActionKind = "DELETE_FROM" | "REGENERATE_FROM" | "REGENERATE_MONTH";
 
 const monthValue = (date = new Date(), timeZone = "Europe/Prague") =>
@@ -477,6 +479,31 @@ export function WeeklyPlanningModule({
       setBusy(false);
     }
   };
+  const saveCrewRoles = async (
+    target: DashboardService,
+    assignments: CrewRoleAssignment[],
+    forceManualOverride = false,
+    confirmedServiceAcknowledged = false,
+  ): Promise<CrewRoleSaveResult> => {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/services/${target.id}/roles`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ assignments, forceManualOverride, confirmedServiceAcknowledged }),
+        }),
+        body = await response.json();
+      if (body.requiresOverrideConfirmation) return { ok: false, requiresConfirmation: true, requiresConfirmedAcknowledgement: body.requiresConfirmedAcknowledgement, warnings: body.warnings ?? [] };
+      if (!response.ok) throw new Error(body.error);
+      replaceEverywhere(body.service);
+      if (body.updatedConfirmed) setUpdatedConfirmed((ids) => new Set(ids).add(target.id));
+      notify("Funkce posádky byly změněny a záskoky přepočítány.");
+      return { ok: true };
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Funkce posádky se nepodařilo změnit.");
+      return { ok: false };
+    } finally { setBusy(false); }
+  };
   const addReplacement = async (
     target: DashboardService,
     input: ReplacementInput,
@@ -675,6 +702,8 @@ export function WeeklyPlanningModule({
     onSaveCrew: (
       assignments: { role: string; slot: number; memberId: string }[],
     ) => saveCrew(item, assignments),
+    onSaveRoles: (assignments: CrewRoleAssignment[], forceManualOverride?: boolean, confirmedServiceAcknowledged?: boolean) =>
+      saveCrewRoles(item, assignments, forceManualOverride, confirmedServiceAcknowledged),
     onSaveReplacement: (input: ReplacementInput, replacementId?: string) =>
       addReplacement(item, input, replacementId),
     onRemoveReplacement: (replacement: DashboardReplacement) =>
@@ -1011,6 +1040,7 @@ type WeekCardProps = {
   onSaveCrew: (
     assignments: { role: string; slot: number; memberId: string }[],
   ) => Promise<boolean>;
+  onSaveRoles: (assignments: CrewRoleAssignment[], forceManualOverride?: boolean, confirmedServiceAcknowledged?: boolean) => Promise<CrewRoleSaveResult>;
   onSaveReplacement: (
     input: ReplacementInput,
     replacementId?: string,
@@ -1036,6 +1066,7 @@ function WeekCard({
   onFutureAction,
   onRerollMember,
   onSaveCrew,
+  onSaveRoles,
   onSaveReplacement,
   onRemoveReplacement,
 }: WeekCardProps) {
@@ -1060,6 +1091,9 @@ function WeekCard({
   const [replacementCandidates, setReplacementCandidates] = useState<ReplacementCandidate[]>([]);
   const [replacementCandidatesBusy, setReplacementCandidatesBusy] = useState(false);
   const [manualOverrideConfirmationOpen, setManualOverrideConfirmationOpen] = useState(false);
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [roleDraft, setRoleDraft] = useState<Record<string, string>>({});
+  const [roleConfirmation, setRoleConfirmation] = useState<{ confirmedService: boolean; warnings: string[] } | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmedAcknowledged, setConfirmedAcknowledged] = useState(false);
   const [knownDt, setKnownDt] = useState<Record<string, boolean>>(() =>
@@ -1076,6 +1110,31 @@ function WeekCard({
       ),
     );
     setEditing(true);
+  };
+  const rolePositions = [
+    { role: "COMMANDER" as const, slot: 1, label: "Velitel" },
+    { role: "DRIVER" as const, slot: 1, label: "Strojník" },
+    { role: "FIREFIGHTER" as const, slot: 1, label: "Hasič 1" },
+    { role: "FIREFIGHTER" as const, slot: 2, label: "Hasič 2" },
+  ];
+  const openRoleDialog = () => {
+    setRoleDraft(Object.fromEntries(service.crew.map((item) => [key(item.roleKey, item.slot), item.memberId])));
+    setRoleConfirmation(null);
+    setRoleDialogOpen(true);
+  };
+  const chooseRoleMember = (positionKey: string, memberId: string) => {
+    setRoleDraft((current) => {
+      const previousMemberId = current[positionKey];
+      const previousPosition = Object.entries(current).find(([keyName, selectedId]) => keyName !== positionKey && selectedId === memberId)?.[0];
+      return previousPosition ? { ...current, [positionKey]: memberId, [previousPosition]: previousMemberId } : { ...current, [positionKey]: memberId };
+    });
+  };
+  const submitRoleChange = async (forceManualOverride = false, confirmedServiceAcknowledged = false) => {
+    const assignments = rolePositions.map((position) => ({ role: position.role, slot: position.slot, memberId: roleDraft[key(position.role, position.slot)] }));
+    if (assignments.some((item) => !item.memberId) || new Set(assignments.map((item) => item.memberId)).size !== 4) return;
+    const result = await onSaveRoles(assignments, forceManualOverride, confirmedServiceAcknowledged);
+    if (result.ok) { setRoleConfirmation(null); setRoleDialogOpen(false); }
+    else if (result.requiresConfirmation) setRoleConfirmation({ confirmedService: Boolean(result.requiresConfirmedAcknowledgement), warnings: result.warnings ?? [] });
   };
   const openCandidates = async (member: DashboardService["crew"][number]) => {
     setTarget({ role: member.roleKey, slot: member.slot, label: member.role });
@@ -1537,6 +1596,9 @@ function WeekCard({
                   <Button variant="outline" onClick={startEdit}>
                     Upravit sestavu
                   </Button>
+                  <Button variant="outline" onClick={openRoleDialog}>
+                    Přehodit funkce
+                  </Button>
                   <Button variant="outline" onClick={() => openOutage()}>
                     <Plus size={14} /> Přidat záskok
                   </Button>
@@ -1618,6 +1680,44 @@ function WeekCard({
           )}
         </div>
       </article>
+      <Dialog
+        open={roleDialogOpen}
+        onOpenChange={(open) => { setRoleDialogOpen(open); if (!open) setRoleConfirmation(null); }}
+      >
+        <DialogContent className="planning-dialog crew-role-dialog">
+          <DialogHeader>
+            <DialogTitle>RUČNÍ ROZDĚLENÍ FUNKCÍ</DialogTitle>
+            <DialogDescription>Přehazujete pouze funkce mezi čtyřmi členy současné základní posádky.</DialogDescription>
+          </DialogHeader>
+          <div className="crew-role-grid">
+            {rolePositions.map((position) => (
+              <label key={key(position.role, position.slot)}>
+                {position.label}
+                <select value={roleDraft[key(position.role, position.slot)] ?? ""} onChange={(event) => chooseRoleMember(key(position.role, position.slot), event.target.value)}>
+                  {service.crew.map((member) => <option key={member.memberId} value={member.memberId}>{member.name}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRoleDialogOpen(false)}>Zrušit</Button>
+            <Button className="primary-action compact" disabled={busy} onClick={() => void submitRoleChange()}>Uložit rozdělení</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={!!roleConfirmation} onOpenChange={(open) => { if (!open) setRoleConfirmation(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{roleConfirmation?.confirmedService ? "Měníte funkce v již potvrzené službě. Pokračovat?" : "Vybraná funkce neodpovídá standardnímu oprávnění člena."}</AlertDialogTitle>
+            <AlertDialogDescription>{roleConfirmation?.warnings.length ? "Vybraní členové nemají všechna standardní oprávnění. Přesto uložit?" : "Služba zůstane potvrzená a změna se okamžitě propíše do všech přehledů."}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {!!roleConfirmation?.warnings.length && <div className="manual-override-warning"><ul>{roleConfirmation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={(event) => { event.preventDefault(); void submitRoleChange(true, true); }}>Přesto uložit</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog
         open={!!target}
         onOpenChange={(open) => {
