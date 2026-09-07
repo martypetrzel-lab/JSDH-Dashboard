@@ -405,7 +405,7 @@ export function hardUnavailabilityIssue(
 ) {
   const member = members.find((item) =>
     item.unavailable?.some((absence) =>
-      intervalsOverlap(absence.from, absence.to, start, end),
+      absence.from <= start && absence.to >= end,
     ),
   );
   return member ? `Člen ${member.name} je v tomto týdnu nedostupný.` : null;
@@ -454,6 +454,20 @@ export function eligibility(
     )
   )
     reasons.push("nahlášená nedostupnost");
+  return { eligible: reasons.length === 0, reasons };
+}
+export function fullyUnavailable(member: Candidate, start: Date, end: Date) {
+  return !!member.unavailable?.some((period) => period.from <= start && period.to >= end);
+}
+export function baseCrewEligibility(
+  member: Candidate,
+  role: Role,
+  start: Date,
+  end: Date,
+  manual = false,
+) {
+  const reasons = eligibility({ ...member, unavailable: [] }, role, start, end, manual).reasons;
+  if (!manual && fullyUnavailable(member, start, end)) reasons.push("nedostupný po celý týden");
   return { eligible: reasons.length === 0, reasons };
 }
 export type ReplacementBlockingInterval = { type: "UNAVAILABILITY" | "RECURRING"; from: Date; to: Date };
@@ -528,7 +542,7 @@ export function validateServiceForConfirmation(
 ) {
   const eligibilityErrors = assignments.flatMap(
       (assignment) =>
-        eligibility(
+        baseCrewEligibility(
           assignment.member,
           assignment.role,
           start,
@@ -540,7 +554,7 @@ export function validateServiceForConfirmation(
     errors = [...new Set([...eligibilityErrors, ...crew.errors])];
   return { valid: errors.length === 0, errors };
 }
-export function validateBaseCrewForCoverage(assignments:Assignment[],start:Date,end:Date,minimumDt=1){const eligibilityErrors=assignments.flatMap(assignment=>eligibility(assignment.member,assignment.role,start,end,assignment.mode==='MANUAL').reasons),crew=validateCrew(assignments,minimumDt),errors=[...new Set([...eligibilityErrors,...crew.errors])];return{valid:errors.length===0,errors};}
+export function validateBaseCrewForCoverage(assignments:Assignment[],start:Date,end:Date,minimumDt=1){const eligibilityErrors=assignments.flatMap(assignment=>baseCrewEligibility(assignment.member,assignment.role,start,end,assignment.mode==='MANUAL').reasons),crew=validateCrew(assignments,minimumDt),errors=[...new Set([...eligibilityErrors,...crew.errors])];return{valid:errors.length===0,errors};}
 export const shouldCreateMonthDraft = (
   status: "DRAFT" | "CONFIRMED" | "CANCELLED" | null,
 ) => status === null;
@@ -585,7 +599,7 @@ export function assembleCrew(
       pool = candidates.filter(
         (candidate) =>
           !used.has(candidate.id) &&
-          eligibility(candidate, role, start, end).eligible,
+          baseCrewEligibility(candidate, role, start, end).eligible,
       ),
       ordered = [...pool]
         .map((candidate) => ({
@@ -666,10 +680,16 @@ export function suggestReplacement(
   minimumDt = 1,
   random = Math.random,
 ) {
+  const baseCandidates = candidates.map((candidate) => ({
+    ...candidate,
+    unavailable: (candidate.unavailable ?? []).filter(
+      (period) => period.from <= start && period.to >= end,
+    ),
+  }));
   const valid = replacementCandidates(
     assignments,
     replacedIndex,
-    candidates,
+    baseCandidates,
     start,
     end,
     minimumDt,
@@ -681,10 +701,10 @@ export function suggestReplacement(
     used = new Set(remaining.map((assignment) => assignment.member.id));
   if (replaced) used.add(replaced.member.id);
   const otherwiseEligible = replaced
-    ? candidates.filter(
+    ? baseCandidates.filter(
         (candidate) =>
           !used.has(candidate.id) &&
-          eligibility(candidate, replaced.role, start, end).eligible,
+          baseCrewEligibility(candidate, replaced.role, start, end).eligible,
       )
     : [];
   const dtShortage = otherwiseEligible.some((candidate) =>
@@ -738,6 +758,7 @@ export type ReplacementPlanItem = {
   to: Date;
   valid: boolean;
   issue: string | null;
+  reason?: string | null;
 };
 export function planTemporaryReplacements(
   baseAssignments: (Assignment & { assignmentId: string })[],
@@ -856,6 +877,7 @@ export type CoverageDiagnostic = {
     memberId: string;
     role: Role;
     slot: number;
+    source?: MemberOutage["source"];
   }[];
 };
 export function unresolvedRecurringReplacements(
@@ -870,6 +892,7 @@ export function unresolvedRecurringReplacements(
     to: diagnostic.to,
     valid: false,
     issue: "Nenalezen vhodný náhradník.",
+    reason: absent.source === "UNAVAILABILITY" ? "Běžná nedostupnost" : "Pracovní směna 24/48",
   })) ?? [];
 }
 export type CoveredWeekPlan = {
@@ -915,10 +938,15 @@ function candidateUnavailable(member: Candidate, from: Date, to: Date) {
     )
   );
 }
-function memberRecurringOutages(member: Candidate, start: Date, end: Date) {
-  return (member.recurringUnavailable ?? []).flatMap((rule) =>
-    recurringOccurrences(rule, start, end),
+export type MemberOutage = { from: Date; to: Date; source: "UNAVAILABILITY" | "RECURRING" };
+export function memberOutages(member: Candidate, start: Date, end: Date): MemberOutage[] {
+  const direct = (member.unavailable ?? [])
+    .filter((period) => intervalsOverlap(period.from, period.to, start, end))
+    .map((period) => ({ from: new Date(Math.max(period.from.getTime(), start.getTime())), to: new Date(Math.min(period.to.getTime(), end.getTime())), source: "UNAVAILABILITY" as const }));
+  const recurring = (member.recurringUnavailable ?? []).flatMap((rule) =>
+    recurringOccurrences(rule, start, end).map((period) => ({ ...period, source: "RECURRING" as const })),
   );
+  return [...direct, ...recurring].sort((left, right) => left.from.getTime() - right.from.getTime());
 }
 
 export type TemporaryCrewPlan = {
@@ -932,9 +960,10 @@ export type TemporaryCrewPlan = {
     originalRole: Role | null;
   }[];
   absentMemberIds: string[];
+  outageSources: MemberOutage["source"][];
 };
 
-/** Finds the best complete, valid crew for each recurring-work-shift interval. */
+/** Finds the best complete, valid crew for each partial absence or recurring-work-shift interval. */
 export function planTemporaryCrews(
   baseAssignments: (Assignment & { assignmentId: string; slot?: number })[],
   candidates: Candidate[],
@@ -945,7 +974,7 @@ export function planTemporaryCrews(
 ): { plans: TemporaryCrewPlan[]; diagnostic: CoverageDiagnostic | null } {
   const outages = new Map(baseAssignments.map((item) => [
     item.assignmentId,
-    memberRecurringOutages(item.member, start, end),
+    memberOutages(item.member, start, end),
   ]));
   const points = [...new Set([
     start.getTime(), end.getTime(),
@@ -1010,6 +1039,7 @@ export function planTemporaryCrews(
             memberId: position.member.id,
             role: position.role,
             slot: position.slot,
+            source: outages.get(position.assignmentId)?.find((period) => intervalsOverlap(period.from, period.to, from, to))?.source,
           })),
       };
       continue;
@@ -1017,6 +1047,7 @@ export function planTemporaryCrews(
     const bestCrew = (best as { crew: Candidate[]; score: number[] }).crew;
     plans.push({
       from, to, absentMemberIds: [...absentIds],
+      outageSources: [...new Set(absent.flatMap((item) => outages.get(item.assignmentId)?.filter((period) => intervalsOverlap(period.from, period.to, from, to)).map((period) => period.source) ?? []))],
       assignments: positions.map((position, index) => ({
         assignmentId: position.assignmentId,
         role: position.role,
@@ -1045,7 +1076,7 @@ export function planCoveredSegments(
     diagnostic: result.diagnostic,
     replacements: result.plans.flatMap((plan) => plan.assignments.flatMap((item) => {
       const original = baseAssignments.find((assignment) => assignment.assignmentId === item.assignmentId)!;
-      return item.member.id === original.member.id ? [] : [{ assignmentId: item.assignmentId, originalMemberId: original.member.id, replacementMemberId: item.member.id, role: item.role, from: plan.from, to: plan.to, valid: true, issue: null }];
+      return item.member.id === original.member.id ? [] : [{ assignmentId: item.assignmentId, originalMemberId: original.member.id, replacementMemberId: item.member.id, role: item.role, from: plan.from, to: plan.to, valid: true, issue: null, reason: plan.outageSources.includes("UNAVAILABILITY") ? "Běžná nedostupnost" : "Pracovní směna 24/48" }];
     })),
   };
 }
@@ -1062,7 +1093,6 @@ export function solveCoveredWeek(
     picked: (Assignment & { assignmentId: string })[] = [],
     used = new Set<string>();
   let solution: CoveredWeekPlan | null = null,
-    fallback: CoveredWeekPlan | null = null,
     lastDiagnostic: CoverageDiagnostic | null = null;
   const search = (index: number) => {
     if (solution) return;
@@ -1076,16 +1106,7 @@ export function solveCoveredWeek(
         minimumDt,
         random,
       );
-      if (coverage.diagnostic) {
-        lastDiagnostic = coverage.diagnostic;
-        const repeated = picked.filter((item) => item.member.servedPreviousWeek).length;
-        fallback ??= {
-          crew: [...picked],
-          replacements: [],
-          fairnessLevel: repeated === 0 ? 1 : repeated < 4 ? 2 : 3,
-        };
-        return;
-      }
+      lastDiagnostic = coverage.diagnostic;
       const repeated = picked.filter(
           (item) => item.member.servedPreviousWeek,
         ).length,
@@ -1102,13 +1123,11 @@ export function solveCoveredWeek(
         candidates.filter(
           (candidate) =>
             !used.has(candidate.id) &&
-            eligibility(candidate, role, start, end).eligible,
+            baseCrewEligibility(candidate, role, start, end).eligible,
         ),
         role,
         fairness,
         random,
-      ).sort((left, right) =>
-        memberRecurringOutages(left, start, end).length - memberRecurringOutages(right, start, end).length,
       );
     for (const member of pool) {
       used.add(member.id);
@@ -1125,7 +1144,7 @@ export function solveCoveredWeek(
     }
   };
   search(0);
-  return { plan: solution ?? fallback, diagnostic: solution ? null : lastDiagnostic };
+  return { plan: solution, diagnostic: lastDiagnostic };
 }
 export function replacementStatistics(
   items: Pick<

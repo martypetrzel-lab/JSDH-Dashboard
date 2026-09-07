@@ -23,7 +23,7 @@ export async function syncServiceReplacements(serviceId: string) {
     await tx.serviceReplacement.deleteMany({ where: { serviceId, source: "RECURRING" } });
     await tx.serviceTemporaryAssignment.deleteMany({ where: { serviceId, source: "RECURRING" } });
     if (invalid.length) await tx.serviceReplacement.createMany({ data: invalid.map((item) => ({ ...item, serviceId, source: "RECURRING" })) });
-    const rows = coverage.plans.flatMap((plan) => plan.assignments.map((item) => ({ serviceId, from: plan.from, to: plan.to, role: item.role, slot: item.slot, memberId: item.member.id, originalAssignmentId: item.assignmentId, source: "RECURRING" as const, reason: "Pracovní směna 24/48" })));
+    const rows = coverage.plans.flatMap((plan) => plan.assignments.map((item) => ({ serviceId, from: plan.from, to: plan.to, role: item.role, slot: item.slot, memberId: item.member.id, originalAssignmentId: item.assignmentId, source: "RECURRING" as const, reason: plan.outageSources.includes("UNAVAILABILITY") ? "Běžná nedostupnost" : "Pracovní směna 24/48" })));
     if (rows.length) await tx.serviceTemporaryAssignment.createMany({ data: rows });
     const unresolvedIssue = invalid.length
       ? `${invalid[0].from.toLocaleString("cs-CZ", { timeZone: settings?.timezone ?? "Europe/Prague" })}–${invalid[0].to.toLocaleString("cs-CZ", { timeZone: settings?.timezone ?? "Europe/Prague" })}: nepodařilo se automaticky sestavit náhradní posádku.`

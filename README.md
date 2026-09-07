@@ -16,7 +16,7 @@ Tlačítko **Navrhnout posádku** na stránce Týdenní služba načítá členy
 
 Stránka **Týdenní služba** umožňuje plánovat jeden vybraný týden, příští týden i všechny služby začínající ve zvoleném kalendářním měsíci. Měsíční generování postupuje chronologicky a každou nově navrženou posádku zahrne do férovosti následujících týdnů. Existující návrhy zachová a potvrzené služby nikdy nepřepisuje. Návrhy lze po týdnech upravit, přelosovat, odstranit a jednotlivě nebo hromadně potvrdit po nové serverové validaci.
 
-Běžná **Nedostupnost** (dovolená, lékař nebo soukromý důvod) je tvrdou překážkou pro základní sestavu: jakýkoliv překryv s intervalem služby člena z automatického výběru vyřadí a nevytváří časový záskok. Pokud vznikne až po uložení služby, sestava se tiše nezmění, ale označí se jako **Vyžaduje změnu sestavy**.
+Běžná **Nedostupnost** (dovolená, lékař nebo soukromý důvod) člena z automatického výběru základní sestavy vyřadí pouze tehdy, když pokrývá celý interval týdenní služby. Částečná nedostupnost člena v základní sestavě vytvoří časový záskok nebo upozornění na nevyřešený záskok, stejně jako konkrétní výskyt pracovní směny 24/48.
 
 Opakované pracovní směny se evidují pomocí kotvy, délky a periody. Člena nevyřazují ze základní týdenní posádky; aplikace pro každý skutečný překryv dopočítá konkrétní časový záskok, preferuje stejného platného náhradníka pro více výpadků a kontroluje oprávnění, zdraví, dostupnost i DT celé výsledné čtveřice. Náhradníkovi se eviduje počet a délka záskoků, nikoli celá týdenní služba.
 

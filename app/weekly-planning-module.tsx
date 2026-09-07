@@ -1452,7 +1452,9 @@ function WeekCard({
                         <span>
                           <Badge variant="outline">
                             {item.source === "RECURRING"
-                              ? "Pracovní směna 24/48 · časový záskok"
+                              ? item.reason === "Běžná nedostupnost"
+                                ? "Běžná nedostupnost · časový záskok"
+                                : "Pracovní směna 24/48 · časový záskok"
                               : "RUČNÍ ZÁSKOK"}
                           </Badge>
                           {formatServiceDateTime(

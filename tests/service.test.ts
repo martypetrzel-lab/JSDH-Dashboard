@@ -6,6 +6,7 @@ import {
   DEFAULT_SERVICE_SETTINGS,
   MISSING_DT_ERROR,
   assembleCrew,
+  baseCrewEligibility,
   canCancelService,
   canHardDeleteService,
   eligibility,
@@ -18,6 +19,7 @@ import {
   manualSelectionModes,
   manualReplacementOverrideAllowed,
   medicalValidUntil,
+  memberOutages,
   nextServiceWeek,
   planCoveredSegments,
   planTemporaryReplacements,
@@ -125,7 +127,7 @@ test("systémový účet není losován", () => {
     false,
   );
 });
-test("překrývající nedostupnost vyřadí člena", () => {
+test("překrývající nedostupnost vyřadí kandidáta z konkrétního časového záskoku", () => {
   const m = base("a", ["FIREFIGHTER"]);
   m.unavailable = [
     { from: new Date("2026-09-10"), to: new Date("2026-09-11") },
@@ -141,7 +143,7 @@ test("nedostupnost zachovává přesné hodiny", () => {
   assert.equal(from.toISOString(), "2026-09-10T16:00:00.000Z");
   assert.equal(to.toISOString(), "2026-09-11T04:00:00.000Z");
 });
-test("překryv pouze části dne blokuje celý týdenní výběr", () => {
+test("překryv pouze části dne neblokuje výběr základní týdenní posádky", () => {
   const m = base("a", ["FIREFIGHTER"]);
   m.unavailable = [
     {
@@ -150,11 +152,11 @@ test("překryv pouze části dne blokuje celý týdenní výběr", () => {
     },
   ];
   assert.equal(
-    eligibility(m, "FIREFIGHTER", week.start, week.end).eligible,
-    false,
+    baseCrewEligibility(m, "FIREFIGHTER", week.start, week.end).eligible,
+    true,
   );
 });
-test("AUTO sestava vybere jiného člena a pro běžnou nedostupnost nevytvoří záskok", () => {
+test("AUTO sestava ponechá částečně nedostupného člena a řeší jen jeho interval", () => {
   const unavailable = base("h-nedostupny", ["FIREFIGHTER"]);
   unavailable.unavailable = [{
     from: new Date("2026-09-10T06:00:00Z"),
@@ -168,8 +170,15 @@ test("AUTO sestava vybere jiného člena a pro běžnou nedostupnost nevytvoří
     base("h2", ["FIREFIGHTER"]),
   ], week.start, week.end, 1, DEFAULT_FAIRNESS_SETTINGS, () => 0);
   assert.ok(result.plan);
-  assert.equal(result.plan!.crew.some((item) => item.member.id === unavailable.id), false);
-  assert.equal(result.plan!.replacements.length, 0);
+  assert.equal(result.plan!.crew.some((item) => item.member.id === unavailable.id), true);
+  assert.deepEqual(memberOutages(unavailable, week.start, week.end), [{ from: new Date("2026-09-10T06:00:00Z"), to: new Date("2026-09-10T16:00:00Z"), source: "UNAVAILABILITY" }]);
+  assert.ok(result.plan!.replacements.some((item) => item.originalMemberId === unavailable.id));
+});
+test("hodinová nedostupnost vytvoří pouze přesný hodinový outage", () => {
+  const member = base("hodinova-absence", ["FIREFIGHTER"]), from = new Date("2026-09-09T08:00:00Z"), to = new Date("2026-09-09T09:00:00Z");
+  member.unavailable = [{ from, to }];
+  assert.equal(baseCrewEligibility(member, "FIREFIGHTER", week.start, week.end).eligible, true);
+  assert.deepEqual(memberOutages(member, week.start, week.end), [{ from, to, source: "UNAVAILABILITY" }]);
 });
 test("nedostupnost končící přesně při začátku služby neblokuje", () => {
   const m = base("a", ["FIREFIGHTER"]);
@@ -932,7 +941,7 @@ test("člověk z minulého týdne může být znovu použit, protože opakován�
     true,
   );
 });
-test("coverage solver odmítne nepokrytou první sestavu a zkusí jinou základní čtveřici", () => {
+test("coverage solver nemění férově vybranou základní posádku kvůli pracovní směně", () => {
   const bad = base("v-spatny", ["COMMANDER"]),
     good = base("v-dobry", ["COMMANDER", "FIREFIGHTER"], true);
   bad.recurringUnavailable = [
@@ -959,8 +968,9 @@ test("coverage solver odmítne nepokrytou první sestavu a zkusí jinou základn
   assert.ok(result.plan);
   assert.equal(
     result.plan!.crew.find((item) => item.role === "COMMANDER")?.member.id,
-    "v-dobry",
+    "v-spatny",
   );
+  assert.ok(result.plan!.replacements.some((item) => item.originalMemberId === "v-spatny"));
 });
 test("platná základní posádka zůstane návrhem i s nepokrytým recurring intervalem", () => {
   const commander = base("v", ["COMMANDER"], true);
@@ -997,7 +1007,7 @@ for (const reversed of [false, true]) test(`nevyřešená směna patří Petrže
   const assignments = recurringMappingAssignments(reversed),
     result = planTemporaryCrews(assignments, assignments.map((item) => item.member), recurringMappingPeriod.start, recurringMappingPeriod.end),
     unresolved = unresolvedRecurringReplacements(result.diagnostic);
-  assert.deepEqual(result.diagnostic?.absentAssignments, [{ assignmentId: "assignment-petrzel-martin", memberId: "petrzel-martin", role: "FIREFIGHTER", slot: reversed ? 1 : 2 }]);
+  assert.deepEqual(result.diagnostic?.absentAssignments, [{ assignmentId: "assignment-petrzel-martin", memberId: "petrzel-martin", role: "FIREFIGHTER", slot: reversed ? 1 : 2, source: "RECURRING" }]);
   assert.equal(unresolved.length, 1);
   assert.equal(unresolved[0].assignmentId, "assignment-petrzel-martin");
   assert.equal(unresolved[0].originalMemberId, "petrzel-martin");
@@ -1008,7 +1018,7 @@ for (const target of ["COMMANDER", "DRIVER"] as const) test(`nevyřešená praco
   assignment.member.recurringUnavailable = [{ anchorStart: recurringMappingPeriod.outage, durationMinutes: 1440, intervalMinutes: 99999 }];
   assignments.find((item) => item.member.id === "petrzel-martin")!.member.recurringUnavailable = [];
   const diagnostic = planTemporaryCrews(assignments, assignments.map((item) => item.member), recurringMappingPeriod.start, recurringMappingPeriod.end).diagnostic;
-  assert.deepEqual(diagnostic?.absentAssignments, [{ assignmentId: assignment.assignmentId, memberId: assignment.member.id, role: target, slot: 1 }]);
+  assert.deepEqual(diagnostic?.absentAssignments, [{ assignmentId: assignment.assignmentId, memberId: assignment.member.id, role: target, slot: 1, source: "RECURRING" }]);
   assert.equal(unresolvedRecurringReplacements(diagnostic)[0].assignmentId, assignment.assignmentId);
 });
 test("diagnostika zachová všechny skutečně nepřítomné pozice ve stejném intervalu", () => {
@@ -1061,7 +1071,7 @@ test("dočasná posádka přesune hasiče na strojníka", () => {
   const result = planTemporaryCrews(assignments, [...members, base("externi", ["FIREFIGHTER"])], week.start, week.end, 1, () => 0);
   assert.equal(result.plans[0].assignments.find((item) => item.role === "DRIVER")?.member.id, "vnitrni");
 });
-test("pokud je jediný velitel běžně nedostupný, základní služba se nevytvoří", () => {
+test("částečně nedostupný jediný velitel zůstane v základní službě s nevyřešeným intervalem", () => {
   const commander = base("v", ["COMMANDER"], true);
   commander.unavailable = [
     {
@@ -1079,10 +1089,10 @@ test("pokud je jediný velitel běžně nedostupný, základní služba se nevyt
     week.start,
     week.end,
   );
-  assert.equal(result.plan, null);
-  assert.equal(result.diagnostic, null);
+  assert.equal(result.plan?.crew.find((item) => item.role === "COMMANDER")?.member.id, "v");
+  assert.ok(result.diagnostic);
 });
-test("nová běžná nedostupnost označí existující službu k řešení", () => {
+test("pouze celotýdenní nedostupnost označí existující základní službu k výměně", () => {
   const issue = hardUnavailabilityIssue([
     {
       name: "Jan Novák",
@@ -1092,14 +1102,16 @@ test("nová běžná nedostupnost označí existující službu k řešení", ()
       }],
     },
   ], week.start, week.end);
-  assert.equal(issue, "Člen Jan Novák je v tomto týdnu nedostupný.");
+  assert.equal(issue, null);
+  assert.equal(hardUnavailabilityIssue([{ name: "Jan Novák", unavailable: [{ from: new Date(week.start.getTime() - 1), to: new Date(week.end.getTime() + 1) }] }], week.start, week.end), "Člen Jan Novák je v tomto týdnu nedostupný.");
 });
-test("manuální picker označí běžně nedostupného člena a zakáže běžný výběr", () => {
+test("manuální picker povolí částečně nedostupného člena a upozorní na záskok", () => {
   const source = readFileSync("app/api/services/[id]/candidates/route.ts", "utf8");
-  assert.match(source, /Nedostupný – běžná nedostupnost zasahuje do služby/);
+  assert.match(source, /Částečná nedostupnost bude řešena záskokem/);
+  assert.match(source, /hardUnavailable/);
   assert.match(source, /available:reasons\.length===0/);
 });
-test("měsíční plán vyřadí běžně nedostupného člena jen z překrývajícího týdne", () => {
+test("měsíční plán ponechá částečně nedostupného člena a vytvoří časové pokrytí", () => {
   const unavailable = base("h-nedostupny", ["FIREFIGHTER"]);
   unavailable.unavailable = [{
     from: new Date("2026-09-10T08:00:00Z"),
@@ -1117,8 +1129,40 @@ test("měsíční plán vyřadí běžně nedostupného člena jen z překrývaj
     base("h2", ["FIREFIGHTER"]),
   ], [], { ...DEFAULT_SERVICE_SETTINGS, ...DEFAULT_FAIRNESS_SETTINGS }, () => 0);
   assert.equal(planned.planned.length, 2);
-  assert.equal(planned.planned[0].crew.some((item) => item.member.id === unavailable.id), false);
-  assert.equal(planned.planned[1].crew.some((item) => item.member.id === unavailable.id), true);
+  assert.equal(planned.planned[0].crew.some((item) => item.member.id === unavailable.id), true);
+  assert.ok(planned.planned[0].replacements.some((item) => item.originalMemberId === unavailable.id));
+});
+test("AUTO základní posádka vyřadí člena nedostupného přes celý týden", () => {
+  const unavailable = base("h-cely-tyden", ["FIREFIGHTER"]);
+  unavailable.unavailable = [{ from: new Date(week.start.getTime() - 3600000), to: new Date(week.end.getTime() + 3600000) }];
+  const result = solveCoveredWeek([
+    base("v", ["COMMANDER"], true),
+    base("s", ["DRIVER"]),
+    unavailable,
+    base("h1", ["FIREFIGHTER"]),
+    base("h2", ["FIREFIGHTER"]),
+  ], week.start, week.end, 1, DEFAULT_FAIRNESS_SETTINGS, () => 0);
+  assert.ok(result.plan);
+  assert.equal(result.plan!.crew.some((item) => item.member.id === unavailable.id), false);
+});
+test("opakované směny nesnižují šanci člena ve férovém výběru několika týdnů", () => {
+  const martin = base("petrzel-martin", ["FIREFIGHTER"], true);
+  martin.recurringUnavailable = [{ anchorStart: new Date("2026-09-09T04:00:00Z"), durationMinutes: 1440, intervalMinutes: 4320 }];
+  const intervals = [0, 1, 2].map((offset) => ({
+    start: new Date(week.start.getTime() + offset * 7 * 86400000),
+    end: new Date(week.end.getTime() + offset * 7 * 86400000),
+  }));
+  const planned = planWeeksSequentially(intervals, [
+    base("v", ["COMMANDER"], true),
+    base("s", ["DRIVER"]),
+    base("h1", ["FIREFIGHTER"]),
+    martin,
+    base("h-nahradnik", ["FIREFIGHTER"]),
+  ], [], { ...DEFAULT_SERVICE_SETTINGS, ...DEFAULT_FAIRNESS_SETTINGS }, () => 0);
+  const martinWeeks = planned.planned.filter((item) => item.crew.some((assignment) => assignment.member.id === martin.id));
+  assert.ok(martinWeeks.length > 0);
+  assert.ok(martinWeeks.some((item) => item.replacements.some((replacement) => replacement.originalMemberId === martin.id)));
+  assert.doesNotMatch(readFileSync("lib/service.ts", "utf8"), /memberRecurringOutages\(left/);
 });
 test("DT se kontroluje v každém segmentu výsledné aktivní čtveřice", () => {
   const commander = base("v", ["COMMANDER"], true);

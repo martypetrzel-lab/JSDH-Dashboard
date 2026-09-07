@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminApi } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { DEFAULT_SERVICE_SETTINGS, eligibility, intervalsOverlap, planningServiceWeek, recurringOccurrences, validateCrew, type Candidate, type Role } from "@/lib/service";
+import { baseCrewEligibility, DEFAULT_SERVICE_SETTINGS, fullyUnavailable, planningServiceWeek, recurringOccurrences, validateCrew, type Candidate, type Role } from "@/lib/service";
 import { formatCzechDate } from "@/lib/member-data";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
 import { syncServiceReplacements } from "@/lib/service-replacements-server";
@@ -39,9 +39,10 @@ export async function GET(request: Request) {
     return NextResponse.json({
       interval: { from: interval.start.toISOString(), to: interval.end.toISOString() }, minimumDt: rules.minimumDt,
       candidates: members.map((member) => {
-        const candidate = toCandidate(member), hardUnavailable = member.unavailability.some((item) => intervalsOverlap(item.from, item.to, interval.start, interval.end));
+        const candidate = toCandidate(member), hardUnavailable = fullyUnavailable(candidate, interval.start, interval.end);
         const recurringCount = member.recurringUnavailability.flatMap((rule) => recurringOccurrences(rule, interval.start, interval.end)).length;
-        return { id: member.id, name: candidate.name, roles: candidate.roles, dt: member.dt, medicalValidUntil: formatCzechDate(member.medicalValidUntil), available: candidate.roles.length > 0 && eligibility(candidate, candidate.roles[0], interval.start, interval.end).reasons.filter((reason) => reason !== "chybí oprávnění").length === 0 && !hardUnavailable, hardUnavailable, recurringCount, warnings: [hardUnavailable && "Nedostupný", recurringCount > 0 && `Pracovní směna 24/48: ${recurringCount} intervalů se záskokem`, !member.medicalValidUntil && "Chybí platná zdravotní prohlídka"].filter(Boolean) };
+        const partialUnavailable = !hardUnavailable && member.unavailability.some((item) => item.from < interval.end && interval.start < item.to);
+        return { id: member.id, name: candidate.name, roles: candidate.roles, dt: member.dt, medicalValidUntil: formatCzechDate(member.medicalValidUntil), available: candidate.roles.length > 0 && baseCrewEligibility(candidate, candidate.roles[0], interval.start, interval.end).reasons.filter((reason) => reason !== "chybí oprávnění").length === 0, hardUnavailable, recurringCount, warnings: [hardUnavailable && "Nedostupný po celý týden", partialUnavailable && "Částečná nedostupnost bude řešena záskokem", recurringCount > 0 && `Pracovní směna 24/48: ${recurringCount} intervalů se záskokem`, !member.medicalValidUntil && "Chybí platná zdravotní prohlídka"].filter(Boolean) };
       }),
     });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Editor se nepodařilo načíst." }, { status: 400 }); }
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     const crew = input.assignments.map((item) => {
       const member = members.find((candidate) => candidate.id === item.memberId);
       if (!member) throw new Error("Vybraný člen nebyl nalezen.");
-      const candidate = toCandidate(member), check = eligibility(candidate, item.role, interval.start, interval.end);
+      const candidate = toCandidate(member), check = baseCrewEligibility(candidate, item.role, interval.start, interval.end);
       if (!check.eligible) throw new Error(`${candidate.name}: ${check.reasons.join(", ")}.`);
       return { ...item, member: candidate, mode: "MANUAL" as const };
     });

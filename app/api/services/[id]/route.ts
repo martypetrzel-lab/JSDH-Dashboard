@@ -4,9 +4,10 @@ import { requireAdminApi } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import {
   canHardDeleteService,
+  baseCrewEligibility,
   DEFAULT_SERVICE_SETTINGS,
   eligibility,
-  intervalsOverlap,
+  fullyUnavailable,
   manualSelectionModes,
   planCoveredSegments,
   serviceDeletionAuditDescription,
@@ -121,17 +122,8 @@ export async function PATCH(
       ),
       warnings: string[] = [];
     if (member.reserveOnly) warnings.push("člen je veden pouze na počet");
-    if (
-      member.unavailability.some((item) =>
-        intervalsOverlap(
-          item.from,
-          item.to,
-          service.weekStart,
-          service.weekEnd,
-        ),
-      )
-    )
-      warnings.push("člen je v tomto týdnu nedostupný");
+    if (fullyUnavailable(selected, service.weekStart, service.weekEnd))
+      warnings.push("člen je nedostupný po celý týden");
     if (eligibilityResult.reasons.length)
       return NextResponse.json(
         { error: eligibilityResult.reasons.join("\n") },
@@ -317,7 +309,7 @@ export async function PUT(
         settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt,
       ),
       eligibilityErrors = proposed.flatMap((item) => {
-        const errors = eligibility(
+        const errors = baseCrewEligibility(
           item.member,
           item.role,
           service.weekStart,
@@ -343,13 +335,6 @@ export async function PUT(
         settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt,
       ),
       replacements = coverage.replacements;
-    if (coverage.diagnostic)
-      return NextResponse.json(
-        {
-          error: `Týden nelze kompletně pokrýt.\n${coverage.diagnostic.from.toISOString()} – ${coverage.diagnostic.to.toISOString()}`,
-        },
-        { status: 422 },
-      );
     const changes = proposed
       .map((item) => {
         const old = service.assignments.find(
