@@ -70,6 +70,7 @@ model ShoppingItem {
   note             String?
   status           ShoppingItemStatus @default(PLANNED)
   purchasedAt      DateTime?          @db.Date
+  purchasedPrice   Int?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
