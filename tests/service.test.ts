@@ -40,6 +40,7 @@ import {
   suggestReplacement,
   validateCrew,
   validateServiceForConfirmation,
+  unresolvedRecurringReplacements,
   weightedPick,
   wholeDay,
   type Assignment,
@@ -914,6 +915,62 @@ test("platná základní posádka zůstane návrhem i s nepokrytým recurring in
   assert.ok(result.plan);
   assert.equal(result.plan!.crew.length, 4);
   assert.ok(result.diagnostic);
+});
+
+const recurringMappingPeriod = {
+  start: new Date("2026-09-14T04:00:00Z"),
+  end: new Date("2026-09-21T04:00:00Z"),
+  outage: new Date("2026-09-17T04:00:00Z"),
+};
+function recurringMappingAssignments(reverseFirefighters = false) {
+  const commander = base("hel", ["COMMANDER"], true),
+    driver = base("bradac", ["DRIVER"]),
+    lagronova = base("lagronova", ["FIREFIGHTER"]),
+    petrzel = base("petrzel-martin", ["FIREFIGHTER"]);
+  commander.name = "Hél Milan";
+  driver.name = "Bradáč Martin";
+  lagronova.name = "Lagronová Kateřina";
+  petrzel.name = "Petržel Martin";
+  petrzel.recurringUnavailable = [{ anchorStart: recurringMappingPeriod.outage, durationMinutes: 1440, intervalMinutes: 99999 }];
+  const firefighters = reverseFirefighters ? [petrzel, lagronova] : [lagronova, petrzel];
+  return [
+    { assignmentId: "assignment-hel", slot: 1, role: "COMMANDER" as Role, member: commander, mode: "AUTO" as const },
+    { assignmentId: "assignment-bradac", slot: 1, role: "DRIVER" as Role, member: driver, mode: "AUTO" as const },
+    ...firefighters.map((member, index) => ({ assignmentId: `assignment-${member.id}`, slot: index + 1, role: "FIREFIGHTER" as Role, member, mode: "AUTO" as const })),
+  ];
+}
+for (const reversed of [false, true]) test(`nevyřešená směna patří Petrželovi bez ohledu na pořadí hasičů (${reversed ? "obráceně" : "běžně"})`, () => {
+  const assignments = recurringMappingAssignments(reversed),
+    result = planTemporaryCrews(assignments, assignments.map((item) => item.member), recurringMappingPeriod.start, recurringMappingPeriod.end),
+    unresolved = unresolvedRecurringReplacements(result.diagnostic);
+  assert.deepEqual(result.diagnostic?.absentAssignments, [{ assignmentId: "assignment-petrzel-martin", memberId: "petrzel-martin", role: "FIREFIGHTER", slot: reversed ? 1 : 2 }]);
+  assert.equal(unresolved.length, 1);
+  assert.equal(unresolved[0].assignmentId, "assignment-petrzel-martin");
+  assert.equal(unresolved[0].originalMemberId, "petrzel-martin");
+  assert.notEqual(unresolved[0].originalMemberId, "lagronova");
+});
+for (const target of ["COMMANDER", "DRIVER"] as const) test(`nevyřešená pracovní směna zachová přesný assignment ${target}`, () => {
+  const assignments = recurringMappingAssignments(), assignment = assignments.find((item) => item.role === target)!;
+  assignment.member.recurringUnavailable = [{ anchorStart: recurringMappingPeriod.outage, durationMinutes: 1440, intervalMinutes: 99999 }];
+  assignments.find((item) => item.member.id === "petrzel-martin")!.member.recurringUnavailable = [];
+  const diagnostic = planTemporaryCrews(assignments, assignments.map((item) => item.member), recurringMappingPeriod.start, recurringMappingPeriod.end).diagnostic;
+  assert.deepEqual(diagnostic?.absentAssignments, [{ assignmentId: assignment.assignmentId, memberId: assignment.member.id, role: target, slot: 1 }]);
+  assert.equal(unresolvedRecurringReplacements(diagnostic)[0].assignmentId, assignment.assignmentId);
+});
+test("diagnostika zachová všechny skutečně nepřítomné pozice ve stejném intervalu", () => {
+  const assignments = recurringMappingAssignments(), driver = assignments.find((item) => item.role === "DRIVER")!;
+  driver.member.recurringUnavailable = [{ anchorStart: recurringMappingPeriod.outage, durationMinutes: 1440, intervalMinutes: 99999 }];
+  const diagnostic = planTemporaryCrews(assignments, assignments.map((item) => item.member), recurringMappingPeriod.start, recurringMappingPeriod.end).diagnostic,
+    unresolved = unresolvedRecurringReplacements(diagnostic);
+  assert.deepEqual(new Set(diagnostic?.absentAssignments.map((item) => item.memberId)), new Set(["bradac", "petrzel-martin"]));
+  assert.deepEqual(new Set(unresolved.map((item) => item.assignmentId)), new Set(["assignment-bradac", "assignment-petrzel-martin"]));
+});
+test("synchronizace mapuje recurring diagnostiku podle assignmentId a zachová ruční záskoky", () => {
+  const sync = readFileSync("lib/service-replacements-server.ts", "utf8"), ui = readFileSync("app/weekly-planning-module.tsx", "utf8");
+  assert.match(sync, /unresolvedRecurringReplacements\(coverage\.diagnostic\)/);
+  assert.doesNotMatch(sync, /find\(\(item\) => item\.role === coverage\.diagnostic/);
+  assert.match(sync, /deleteMany\(\{ where: \{ serviceId, source: "RECURRING" \} \}\)/);
+  assert.match(ui, /item\.assignmentId === member\.assignmentId/);
 });
 
 test("ruční návrh má samostatný endpoint a tlačítko nepoužívá generate flow", () => {

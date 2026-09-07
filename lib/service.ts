@@ -843,7 +843,27 @@ export type CoverageDiagnostic = {
   to: Date;
   missingRole: Role;
   availableCandidates: number;
+  absentAssignments: {
+    assignmentId: string;
+    memberId: string;
+    role: Role;
+    slot: number;
+  }[];
 };
+export function unresolvedRecurringReplacements(
+  diagnostic: CoverageDiagnostic | null,
+): ReplacementPlanItem[] {
+  return diagnostic?.absentAssignments.map((absent) => ({
+    assignmentId: absent.assignmentId,
+    originalMemberId: absent.memberId,
+    replacementMemberId: null,
+    role: absent.role,
+    from: diagnostic.from,
+    to: diagnostic.to,
+    valid: false,
+    issue: "Nenalezen vhodný náhradník.",
+  })) ?? [];
+}
 export type CoveredWeekPlan = {
   crew: (Assignment & { assignmentId: string })[];
   replacements: ReplacementPlanItem[];
@@ -970,7 +990,20 @@ export function planTemporaryCrews(
     };
     search(0);
     if (!best) {
-      firstDiagnostic ??= { from, to, missingRole: absent[0].role, availableCandidates: 0 };
+      firstDiagnostic ??= {
+        from,
+        to,
+        missingRole: absent[0].role,
+        availableCandidates: 0,
+        absentAssignments: positions
+          .filter((position) => absent.some((item) => item.assignmentId === position.assignmentId))
+          .map((position) => ({
+            assignmentId: position.assignmentId,
+            memberId: position.member.id,
+            role: position.role,
+            slot: position.slot,
+          })),
+      };
       continue;
     }
     const bestCrew = (best as { crew: Candidate[]; score: number[] }).crew;

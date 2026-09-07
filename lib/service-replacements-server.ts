@@ -1,5 +1,5 @@
 import { getPrisma } from "./prisma";
-import { DEFAULT_SERVICE_SETTINGS, planTemporaryCrews, type Assignment, type Role } from "./service";
+import { DEFAULT_SERVICE_SETTINGS, planTemporaryCrews, unresolvedRecurringReplacements, type Assignment, type Role } from "./service";
 import { toPlanningCandidates } from "./service-candidates";
 
 export async function syncServiceReplacements(serviceId: string) {
@@ -18,11 +18,7 @@ export async function syncServiceReplacements(serviceId: string) {
   }));
   const assignments = service.assignments.map((item) => ({ assignmentId: item.id, slot: item.slot, role: item.role as Role, member: candidates.find((member) => member.id === item.memberId)!, mode: item.selectionMode })) satisfies (Assignment & { assignmentId: string; slot: number })[];
   const coverage = planTemporaryCrews(assignments, candidates, service.weekStart, service.weekEnd, settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt);
-  const invalid = coverage.diagnostic ? [{
-    assignmentId: assignments.find((item) => item.role === coverage.diagnostic!.missingRole)?.assignmentId ?? assignments[0].assignmentId,
-    originalMemberId: assignments.find((item) => item.role === coverage.diagnostic!.missingRole)?.member.id ?? assignments[0].member.id,
-    replacementMemberId: null, role: coverage.diagnostic.missingRole, from: coverage.diagnostic.from, to: coverage.diagnostic.to, valid: false, issue: "Nenalezen vhodný náhradník.",
-  }] : [];
+  const invalid = unresolvedRecurringReplacements(coverage.diagnostic);
   await prisma.$transaction(async (tx) => {
     await tx.serviceReplacement.deleteMany({ where: { serviceId, source: "RECURRING" } });
     await tx.serviceTemporaryAssignment.deleteMany({ where: { serviceId, source: "RECURRING" } });
