@@ -4,6 +4,10 @@ Interní webová aplikace pro plánování výjezdové posádky 3+1, evidenci č
 
 Na stránce **Členové** je dostupný hromadný import z Excelu, Google Sheets i CSV. Před uložením zobrazí kontrolovaný náhled, dopočítá dvouletou platnost zdravotní prohlídky a umožní rozhodnout o pravděpodobných duplicitách. Zápis proběhne až po potvrzení, serverově a v jedné databázové transakci. Prázdnou CSV šablonu lze stáhnout přímo z importního dialogu.
 
+## Školení / Odborná příprava
+
+Modul **Školení / Odborná příprava** eviduje témata, školitele a docházku, nabízí archiv i tiskovou prezenční listinu PDF. Postup nasazení a používání je v [dokumentaci školení](docs/training.md). Knihovna obsahuje 273 témat ve 31 kategoriích.
+
 ## Časové pravidlo služby
 
 Týdenní služba začíná v **pondělí v 06:00** a končí v **následující pondělí v 06:00** v časovém pásmu `Europe/Prague`. Časové hranice se počítají v pražském pásmu včetně změn letního a zimního času. Intervaly nedostupnosti jsou polouzavřené: záznam končící přesně na začátku služby už tuto službu neblokuje.
@@ -113,7 +117,7 @@ Health check je dostupný na `/api/health`. Vrací pouze stav služby a žádné
 7. Nastavte náhodný `SESSION_SECRET` o délce alespoň 32 znaků.
 8. Nastavte dlouhý náhodný `INTEGRATION_API_KEY` pro integrační REST API.
 9. Nastavte `TZ=Europe/Prague`.
-10. Jako **Pre-deploy Command** ponechte `npx prisma migrate deploy`.
+10. Pre-deploy kroky přebírejte z `railway.toml`: nejprve `npx prisma migrate deploy`, potom `npm run training:topics:import`. Pokud máte vlastní přepsaný příkaz v Railway, zahrňte oba kroky v tomto pořadí.
 11. Spusťte deploy.
 12. V části Networking zvolte **Generate Domain**.
 

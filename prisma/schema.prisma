@@ -103,6 +103,8 @@ model Member {
   replacementsAsOriginal   ServiceReplacement[]      @relation("ReplacementOriginal")
   replacementsAsSubstitute ServiceReplacement[]      @relation("ReplacementSubstitute")
   temporaryAssignments     ServiceTemporaryAssignment[]
+  trainingParticipations   TrainingParticipant[]
+  instructedTrainings      TrainingSession[] @relation("TrainingInstructor")
 
   @@index([active])
   @@index([lastName, firstName])
@@ -329,4 +331,90 @@ model MedicalTemplate {
   size        Int
   uploadedAt  DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+enum TrainingTopicSource {
+  HASICI_VZDELAVANI
+  INTERNAL
+  OTHER
+}
+
+enum TrainingType {
+  THEORY
+  PRACTICE
+  COMBINED
+}
+
+enum TrainingStatus {
+  DRAFT
+  COMPLETED
+}
+
+enum TrainingAttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
+model TrainingTopic {
+  id String @id @default(cuid())
+  code String @unique
+  name String
+  category String
+  description String?
+  source String?
+  sourceUrl String?
+  sourceType TrainingTopicSource @default(INTERNAL)
+  active Boolean @default(true)
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions TrainingSessionTopic[]
+  @@index([active, category])
+}
+
+model TrainingSession {
+  id String @id @default(cuid())
+  date DateTime @db.Date
+  startTime DateTime?
+  endTime DateTime?
+  durationMinutes Int
+  location String?
+  trainingType TrainingType
+  instructorName String
+  instructorMemberId String?
+  instructor Member? @relation("TrainingInstructor", fields: [instructorMemberId], references: [id], onDelete: SetNull)
+  notes String?
+  status TrainingStatus @default(DRAFT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  topics TrainingSessionTopic[]
+  participants TrainingParticipant[]
+  @@index([date])
+}
+
+model TrainingSessionTopic {
+  id String @id @default(cuid())
+  sessionId String
+  topicId String
+  nameSnapshot String
+  categorySnapshot String
+  session TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  topic TrainingTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  @@unique([sessionId, topicId])
+}
+
+model TrainingParticipant {
+  id String @id @default(cuid())
+  sessionId String
+  memberId String
+  status TrainingAttendanceStatus
+  note String?
+  signedAt DateTime?
+  nameSnapshot String
+  roleSnapshot String
+  session TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  @@unique([sessionId, memberId])
+  @@index([memberId])
 }

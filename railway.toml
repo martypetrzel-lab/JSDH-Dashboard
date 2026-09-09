@@ -3,7 +3,7 @@ builder = "RAILPACK"
 buildCommand = "npm run build"
 
 [deploy]
-preDeployCommand = ["npx prisma migrate deploy"]
+preDeployCommand = ["npx prisma migrate deploy", "npm run training:topics:import"]
 startCommand = "npm run start"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
