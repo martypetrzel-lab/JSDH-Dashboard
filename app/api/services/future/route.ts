@@ -16,6 +16,7 @@ import {
 } from "@/lib/service";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
 import { syncServiceReplacements } from "@/lib/service-replacements-server";
+import { baseServiceCategory } from "@/lib/statistics";
 
 export const runtime = "nodejs";
 const schema = z.object({
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
         select: {
           memberId: true,
           role: true,
-          service: { select: { weekStart: true } },
+          service: { select: { weekStart: true, status: true } },
         },
       }),
     ]);
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
         { status: 404 },
       );
     const history = allHistory
-      .filter((item) => item.service.weekStart < from)
+      .filter((item) => item.service.weekStart < from && baseServiceCategory(item.service.status, item.service.weekStart, new Date()) !== null)
       .map((item) => ({
         memberId: item.memberId,
         role: item.role as Role,

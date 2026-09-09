@@ -13,6 +13,7 @@ import {
 } from "@/lib/service";
 import { serializeWeeklyService } from "@/lib/weekly-service-data";
 import { syncServiceReplacements } from "@/lib/service-replacements-server";
+import { baseServiceCategory } from "@/lib/statistics";
 
 export const runtime = "nodejs";
 const inputSchema = z.object({ reference: z.iso.datetime().optional() });
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
         select: {
           memberId: true,
           role: true,
-          service: { select: { weekStart: true } },
+          service: { select: { weekStart: true, status: true } },
         },
       }),
     ]);
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       rules,
     );
     const relevantHistory = history.filter(
-        (item) => item.service.weekStart < interval.start,
+        (item) => item.service.weekStart < interval.start && baseServiceCategory(item.service.status, item.service.weekStart, new Date()) !== null,
       ),
       previousStart = interval.start.getTime() - 7 * 86400000;
     const candidates: Candidate[] = members.map((member) => {

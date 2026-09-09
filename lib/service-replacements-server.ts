@@ -20,7 +20,7 @@ export async function syncServiceReplacements(serviceId: string) {
     prisma.member.findMany({ include: { unavailability: true, recurringUnavailability: { where: { active: true } } } }),
     prisma.weeklyServiceAssignment.findMany({
       where: { service: { status: { in: ["CONFIRMED", "DRAFT"] } } },
-      select: { memberId: true, role: true, service: { select: { weekStart: true } } },
+      select: { memberId: true, role: true, service: { select: { weekStart: true, status: true } } },
     }),
   ]);
   if (!service) throw new Error("Služba nebyla nalezena.");

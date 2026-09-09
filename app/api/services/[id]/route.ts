@@ -235,7 +235,7 @@ export async function PUT(
           select: {
             memberId: true,
             role: true,
-            service: { select: { weekStart: true } },
+            service: { select: { weekStart: true, status: true } },
           },
         }),
       ]);

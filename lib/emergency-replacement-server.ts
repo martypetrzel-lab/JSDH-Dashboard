@@ -16,7 +16,7 @@ export async function prepareEmergencyReplacement(
     prisma.weeklyService.findUnique({ where: { id: serviceId }, include: { assignments: true, replacements: true } }),
     prisma.settings.findUnique({ where: { id: "default" } }),
     prisma.member.findMany({ include: { unavailability: true, recurringUnavailability: { where: { active: true } } } }),
-    prisma.weeklyServiceAssignment.findMany({ where: { service: { status: { in: ["CONFIRMED", "DRAFT"] } } }, select: { memberId: true, role: true, service: { select: { weekStart: true } } } }),
+    prisma.weeklyServiceAssignment.findMany({ where: { service: { status: { in: ["CONFIRMED", "DRAFT"] } } }, select: { memberId: true, role: true, service: { select: { weekStart: true, status: true } } } }),
   ]);
   if (!service) throw new Error("Služba nebyla nalezena.");
   if (service.status === "CANCELLED") throw new Error("Zrušenou službu nelze upravit.");

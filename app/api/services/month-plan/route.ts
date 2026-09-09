@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         select: {
           memberId: true,
           role: true,
-          service: { select: { weekStart: true } },
+          service: { select: { weekStart: true, status: true } },
         },
       }),
     ]);
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
         ...plan.crew.map((assignment) => ({
           memberId: assignment.member.id,
           role: assignment.role,
-          service: { weekStart: interval.start },
+          service: { weekStart: interval.start, status: "DRAFT" as const },
         })),
       );
     }
