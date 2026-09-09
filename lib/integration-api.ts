@@ -8,7 +8,6 @@ export * from "@/lib/integration-core";
 export const integrationServiceInclude = {
   assignments: { orderBy: [{ role: "asc" }, { slot: "asc" }] },
   replacements: { include: { originalMember: true, replacementMember: true }, orderBy: { from: "asc" } },
-  temporaryAssignments: { include: { member: true }, orderBy: [{ from: "asc" }, { role: "asc" }, { slot: "asc" }] },
 } satisfies Prisma.WeeklyServiceInclude;
 
 export function integrationUnauthorized() { return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } }); }

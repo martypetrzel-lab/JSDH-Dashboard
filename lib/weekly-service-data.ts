@@ -113,18 +113,6 @@ export function serializeWeeklyService(service: SerializableService): DashboardS
       source: item.source === 'MANUAL' ? 'MANUAL' : 'RECURRING',
       manualOverride: item.manualOverride ?? false,
     })),
-    temporaryCrews: [...new Map((service.temporaryAssignments ?? []).map((item) => {
-      const key = `${item.from.toISOString()}|${item.to.toISOString()}`;
-      return [key, {
-        from: item.from.toISOString(), to: item.to.toISOString(),
-        source: item.source === 'MANUAL' ? 'MANUAL' as const : 'RECURRING' as const,
-        reason: item.reason,
-        assignments: (service.temporaryAssignments ?? []).filter((row) => row.from.getTime() === item.from.getTime() && row.to.getTime() === item.to.getTime()).map((row) => ({
-          id: row.id, memberId: row.memberId, name: memberName(row.member),
-          roleKey: row.role as 'COMMANDER' | 'DRIVER' | 'FIREFIGHTER', slot: row.slot,
-          originalAssignmentId: row.originalAssignmentId,
-        })),
-      }];
-    })).values()],
+    temporaryCrews: [],
   };
 }

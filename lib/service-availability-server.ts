@@ -16,7 +16,7 @@ export async function refreshHardUnavailabilityForMembers(memberIds: string[]) {
     },
     include: {
       assignments: {
-        include: { member: { include: { unavailability: true } } },
+        include: { member: { include: { unavailability: true, recurringUnavailability: { where: { active: true } } } } },
       },
     },
   });
@@ -29,6 +29,11 @@ export async function refreshHardUnavailabilityForMembers(memberIds: string[]) {
         service.assignments.map((assignment) => ({
           name: assignment.nameSnapshot,
           unavailable: assignment.member.unavailability,
+          recurringUnavailable: assignment.member.recurringUnavailability.map((rule) => ({
+            anchorStart: rule.anchorStart,
+            durationMinutes: rule.durationMinutes,
+            intervalMinutes: rule.intervalMinutes,
+          })),
         })),
         service.weekStart,
         service.weekEnd,

@@ -7,7 +7,6 @@ type WhatsAppCrew = {
   dt: string[];
   updated?: boolean;
   replacements?: { originalName:string; replacementName:string; from:string; to:string }[];
-  temporaryCrews?: { from: string; to: string; changes: string[] }[];
   obligations?: {
     dt: { name: string; due: string | null; overdue: boolean }[];
     drivers: { name: string }[];
@@ -44,10 +43,6 @@ export function buildWhatsAppMessage(crew: WhatsAppCrew) {
     `${emoji.check} Posádka 3+1 potvrzena.`,
   ];
   if(crew.replacements?.length){lines.push('',`${emoji.replacement} ZÁSKOKY`);let current='';for(const item of crew.replacements){if(item.originalName!==current){lines.push('',`${item.originalName}:`);current=item.originalName}lines.push(`${item.from}–${item.to} → ${item.replacementName}`)}}
-  if (crew.temporaryCrews?.length) {
-    if (!crew.replacements?.length) lines.push('', `${emoji.replacement} ZÁSKOKY`);
-    for (const interval of crew.temporaryCrews) lines.push('', `${interval.from}–${interval.to}`, ...interval.changes);
-  }
   if (crew.obligations) {
     lines.push('', `${emoji.warning} POVINNOSTI`);
     if (!crew.obligations.dt.length && !crew.obligations.drivers.length) lines.push('', `${emoji.check} Kondiční povinnosti jsou aktuálně splněny.`);

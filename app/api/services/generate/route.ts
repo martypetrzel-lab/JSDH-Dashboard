@@ -140,13 +140,17 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
-    const { crew, replacements } = solved.plan;
-    const serviceId = await prisma.$transaction(async (tx) => {
+    const { crew } = solved.plan;
+    const regeneration = await prisma.$transaction(async (tx) => {
       const existing = await tx.weeklyService.findUnique({
         where: { weekStart: interval.start },
       });
       if (existing?.status === "CANCELLED")
         throw new Error("Zrušenou službu nelze přelosovat.");
+      const manualReplacements = existing ? await tx.serviceReplacement.findMany({
+        where: { serviceId: existing.id, source: "MANUAL" },
+        include: { assignment: true },
+      }) : [];
       const service = existing
         ? await tx.weeklyService.update({
             where: { id: existing.id },
@@ -166,7 +170,7 @@ export async function POST(request: Request) {
         where: { serviceId: service.id },
       });
       const slots = new Map<Role, number>();
-      const assignmentIds = new Map<string, string>();
+      const assignmentIdsByMemberRole = new Map<string, string>();
       for (const assignment of crew) {
         const slot = (slots.get(assignment.role) ?? 0) + 1;
         slots.set(assignment.role, slot);
@@ -182,16 +186,20 @@ export async function POST(request: Request) {
             dtSnapshot: assignment.member.dt,
           },
         });
-        assignmentIds.set(assignment.assignmentId, saved.id);
+        assignmentIdsByMemberRole.set(`${assignment.member.id}:${assignment.role}`, saved.id);
       }
-      if (replacements.length)
+      const safeManualReplacements = manualReplacements.flatMap((item) => {
+        const assignmentId = assignmentIdsByMemberRole.get(`${item.originalMemberId}:${item.role}`);
+        return assignmentId ? [{
+          serviceId: service.id, assignmentId, originalMemberId: item.originalMemberId,
+          replacementMemberId: item.replacementMemberId, role: item.role, from: item.from, to: item.to,
+          valid: item.valid, issue: item.issue, reason: item.reason, source: "MANUAL" as const,
+          manualOverride: item.manualOverride,
+        }] : [];
+      });
+      if (safeManualReplacements.length)
         await tx.serviceReplacement.createMany({
-          data: replacements.map((item) => ({
-            ...item,
-            assignmentId: assignmentIds.get(item.assignmentId)!,
-            serviceId: service.id,
-            source: "RECURRING",
-          })),
+          data: safeManualReplacements,
         });
       await tx.auditLog.create({
         data: {
@@ -202,8 +210,9 @@ export async function POST(request: Request) {
           actor: "Administrátor",
         },
       });
-      return service.id;
+      return { serviceId: service.id, discardedManualCount: manualReplacements.length - safeManualReplacements.length };
     });
+    const { serviceId, discardedManualCount } = regeneration;
     await syncServiceReplacements(serviceId);
     const service = await prisma.weeklyService.findUniqueOrThrow({
       where: { id: serviceId },
@@ -216,7 +225,10 @@ export async function POST(request: Request) {
         temporaryAssignments: { include: { member: true }, orderBy: [{ from: "asc" }, { role: "asc" }, { slot: "asc" }] },
       },
     });
-    return NextResponse.json({ service: serializeWeeklyService(service) });
+    return NextResponse.json({
+      service: serializeWeeklyService(service),
+      warning: discardedManualCount ? `${discardedManualCount} ruční záskok nebylo možné zachovat, protože jeho původní člen již není na stejné pozici.` : null,
+    });
   } catch (error) {
     return NextResponse.json(
       {

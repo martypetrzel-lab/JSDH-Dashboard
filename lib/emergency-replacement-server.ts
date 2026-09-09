@@ -13,7 +13,7 @@ export async function prepareEmergencyReplacement(
 ) {
   const prisma = getPrisma();
   const [service, settings, members, history] = await Promise.all([
-    prisma.weeklyService.findUnique({ where: { id: serviceId }, include: { assignments: true, replacements: true, temporaryAssignments: true } }),
+    prisma.weeklyService.findUnique({ where: { id: serviceId }, include: { assignments: true, replacements: true } }),
     prisma.settings.findUnique({ where: { id: "default" } }),
     prisma.member.findMany({ include: { unavailability: true, recurringUnavailability: { where: { active: true } } } }),
     prisma.weeklyServiceAssignment.findMany({ where: { service: { status: { in: ["CONFIRMED", "DRAFT"] } } }, select: { memberId: true, role: true, service: { select: { weekStart: true } } } }),
@@ -32,7 +32,6 @@ export async function prepareEmergencyReplacement(
   const assignments: Assignment[] = service.assignments.map((item) => ({ role: item.role as Role, member: candidates.find((candidate) => candidate.id === item.memberId)!, mode: item.selectionMode }));
   const index = service.assignments.findIndex((item) => item.id === assignmentId);
   const busyIds = new Set(service.replacements.filter((item) => item.id !== ignoreReplacementId && item.replacementMemberId && intervalsOverlap(item.from, item.to, from, to)).map((item) => item.replacementMemberId!));
-  for(const item of service.temporaryAssignments)if(intervalsOverlap(item.from,item.to,from,to))busyIds.add(item.memberId);
   const availabilityById = new Map(candidates.map((candidate) => [candidate.id, getReplacementAvailability(candidate, from, to)]));
   const nonRecurring = candidates.filter((candidate) => !busyIds.has(candidate.id) && availabilityById.get(candidate.id)!.available).map((candidate) => ({ ...candidate, unavailable: [], recurringUnavailable: [] }));
   const valid = replacementCandidates(assignments, index, nonRecurring, from, to, settings?.minimumDt ?? DEFAULT_SERVICE_SETTINGS.minimumDt);

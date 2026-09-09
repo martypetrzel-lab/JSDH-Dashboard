@@ -121,19 +121,17 @@ export function serviceTimeline(
   end: Date,
   crew: ServiceTimelineAssignment[],
   replacements: ServiceTimelineReplacement[],
-  temporaryAssignments: ServiceTimelineTemporaryAssignment[] = [],
+  _temporaryAssignments: ServiceTimelineTemporaryAssignment[] = [],
 ) {
   const relevant = replacements.filter((item) =>
     intervalsOverlap(item.from, item.to, start, end),
   );
-  const relevantTemporary = temporaryAssignments.filter((item) => intervalsOverlap(item.from, item.to, start, end));
   const boundaries = [
     start,
     ...relevant.flatMap((item) => [
       item.from < start ? start : item.from,
       item.to > end ? end : item.to,
     ]),
-    ...relevantTemporary.flatMap((item) => [item.from < start ? start : item.from, item.to > end ? end : item.to]),
     end,
   ]
     .map((item) => item.getTime())
@@ -144,10 +142,7 @@ export function serviceTimeline(
     return {
       from: new Date(from),
       to: new Date(to),
-      crew: (() => {
-        const temporary = relevantTemporary.filter((item) => item.from.getTime() <= from && item.to.getTime() >= to);
-        if (temporary.length === 4 && new Set(temporary.map((item) => item.memberId)).size === 4) return temporary.map((item) => ({ assignmentId: item.originalAssignmentId ?? item.id, role: item.role, memberId: item.memberId, name: item.name, replaced: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.memberId !== item.memberId, originalName: crew.find((base) => base.assignmentId === item.originalAssignmentId)?.name ?? null, unresolved: false }));
-        return crew.map((item) => {
+      crew: crew.map((item) => {
         const unresolved = relevant.find(
           (candidate) =>
             candidate.assignmentId === item.assignmentId &&
@@ -171,8 +166,7 @@ export function serviceTimeline(
           originalName: replacement ? item.name : null,
           unresolved: !!unresolved,
         };
-        });
-      })(),
+        }),
     };
   });
 }
@@ -399,15 +393,15 @@ export const intervalsOverlap = (
   bEnd: Date,
 ) => aStart < bEnd && bStart < aEnd;
 export function hardUnavailabilityIssue(
-  members: { name: string; unavailable?: { from: Date; to: Date }[] }[],
+  members: { name: string; unavailable?: { from: Date; to: Date }[]; recurringUnavailable?: RecurringRule[] }[],
   start: Date,
   end: Date,
 ) {
-  const member = members.find((item) =>
-    item.unavailable?.some((absence) =>
-      absence.from <= start && absence.to >= end,
-    ),
-  );
+  const member = members.find((item) => fullyUnavailable({
+    id: "", name: item.name, active: true, system: false, reserveOnly: false,
+    dt: false, medicalExam: null, roles: [], serviceCount: 0, lastService: null,
+    unavailable: item.unavailable, recurringUnavailable: item.recurringUnavailable,
+  }, start, end));
   return member ? `Člen ${member.name} je v tomto týdnu nedostupný.` : null;
 }
 export const medicalValidUntil = (exam: Date | null) =>
@@ -457,7 +451,13 @@ export function eligibility(
   return { eligible: reasons.length === 0, reasons };
 }
 export function fullyUnavailable(member: Candidate, start: Date, end: Date) {
-  return !!member.unavailable?.some((period) => period.from <= start && period.to >= end);
+  let coveredUntil = start.getTime();
+  for (const outage of memberOutages(member, start, end)) {
+    if (outage.from.getTime() > coveredUntil) return false;
+    coveredUntil = Math.max(coveredUntil, outage.to.getTime());
+    if (coveredUntil >= end.getTime()) return true;
+  }
+  return false;
 }
 export function baseCrewEligibility(
   member: Candidate,
@@ -911,8 +911,6 @@ function orderedCandidates(
     .map((candidate) => ({ candidate, tie: fairness.fairDraw ? random() : 0 }))
     .sort(
       (left, right) =>
-        Number(left.candidate.servedPreviousWeek) -
-          Number(right.candidate.servedPreviousWeek) ||
         (fairness.considerRole
           ? (left.candidate.roleServiceCount?.[role] ?? 0) -
             (right.candidate.roleServiceCount?.[role] ?? 0)
@@ -923,6 +921,9 @@ function orderedCandidates(
         (fairness.preferRested
           ? (left.candidate.lastService?.getTime() ?? 0) -
             (right.candidate.lastService?.getTime() ?? 0)
+          : 0) ||
+        (!fairness.allowConsecutive
+          ? Number(left.candidate.servedPreviousWeek) - Number(right.candidate.servedPreviousWeek)
           : 0) ||
         left.tie - right.tie,
     )
@@ -946,7 +947,20 @@ export function memberOutages(member: Candidate, start: Date, end: Date): Member
   const recurring = (member.recurringUnavailable ?? []).flatMap((rule) =>
     recurringOccurrences(rule, start, end).map((period) => ({ ...period, source: "RECURRING" as const })),
   );
-  return [...direct, ...recurring].sort((left, right) => left.from.getTime() - right.from.getTime());
+  const sorted = [...direct, ...recurring].sort((left, right) => left.from.getTime() - right.from.getTime() || left.to.getTime() - right.to.getTime());
+  const merged: MemberOutage[] = [];
+  for (const outage of sorted) {
+    const previous = merged.at(-1);
+    if (!previous || outage.from.getTime() >= previous.to.getTime()) {
+      merged.push({ ...outage });
+      continue;
+    }
+    if (outage.to > previous.to) previous.to = outage.to;
+    // If a normal absence overlaps a work shift, present the merged interval as
+    // normal unavailability. It is still one outage belonging to this memberId.
+    if (outage.source === "UNAVAILABILITY") previous.source = "UNAVAILABILITY";
+  }
+  return merged;
 }
 
 export type TemporaryCrewPlan = {
@@ -1071,14 +1085,41 @@ export function planCoveredSegments(
   replacements: ReplacementPlanItem[];
   diagnostic: CoverageDiagnostic | null;
 } {
-  const result = planTemporaryCrews(baseAssignments, candidates, start, end, minimumDt, random);
-  return {
-    diagnostic: result.diagnostic,
-    replacements: result.plans.flatMap((plan) => plan.assignments.flatMap((item) => {
-      const original = baseAssignments.find((assignment) => assignment.assignmentId === item.assignmentId)!;
-      return item.member.id === original.member.id ? [] : [{ assignmentId: item.assignmentId, originalMemberId: original.member.id, replacementMemberId: item.member.id, role: item.role, from: plan.from, to: plan.to, valid: true, issue: null, reason: plan.outageSources.includes("UNAVAILABILITY") ? "Běžná nedostupnost" : "Pracovní směna 24/48" }];
-    })),
-  };
+  const baseIds = new Set(baseAssignments.map((item) => item.member.id));
+  const replacements: ReplacementPlanItem[] = [];
+  let diagnostic: CoverageDiagnostic | null = null;
+  const outages = baseAssignments.flatMap((assignment, index) =>
+    memberOutages(assignment.member, start, end).map((outage) => ({ assignment, outage, index })),
+  ).sort((left, right) => left.outage.from.getTime() - right.outage.from.getTime());
+
+  for (const { assignment, outage, index } of outages) {
+    const eligible = candidates.filter((candidate) => {
+      if (baseIds.has(candidate.id) || candidateUnavailable(candidate, outage.from, outage.to)) return false;
+      if (replacements.some((item) => item.replacementMemberId === candidate.id && intervalsOverlap(item.from, item.to, outage.from, outage.to))) return false;
+      return replacementCandidates(baseAssignments, index, [candidate], outage.from, outage.to, minimumDt).length === 1;
+    });
+    const selected = orderedCandidates(eligible, assignment.role, DEFAULT_FAIRNESS_SETTINGS, random)[0] ?? null;
+    const replacement: ReplacementPlanItem = {
+      assignmentId: assignment.assignmentId,
+      originalMemberId: assignment.member.id,
+      replacementMemberId: selected?.id ?? null,
+      role: assignment.role,
+      from: outage.from,
+      to: outage.to,
+      valid: !!selected,
+      issue: selected ? null : "Nenalezen vhodný náhradník.",
+      reason: outage.source === "UNAVAILABILITY" ? "Běžná nedostupnost" : "Pracovní směna 24/48",
+    };
+    replacements.push(replacement);
+    if (!selected && !diagnostic) diagnostic = {
+      from: outage.from,
+      to: outage.to,
+      missingRole: assignment.role,
+      availableCandidates: eligible.length,
+      absentAssignments: [{ assignmentId: assignment.assignmentId, memberId: assignment.member.id, role: assignment.role, slot: assignment.role === "FIREFIGHTER" ? baseAssignments.slice(0, index + 1).filter((item) => item.role === "FIREFIGHTER").length : 1, source: outage.source }],
+    };
+  }
+  return { diagnostic, replacements };
 }
 
 export function solveCoveredWeek(

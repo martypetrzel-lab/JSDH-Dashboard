@@ -14,7 +14,6 @@ const inputSchema = z.object({
 const serviceInclude = {
   assignments: { orderBy: [{ role: 'asc' as const }, { slot: 'asc' as const }] },
   replacements: { include: { originalMember: true, replacementMember: true }, orderBy: { from: 'asc' as const } },
-  temporaryAssignments: { include: { member: true }, orderBy: [{ from: 'asc' as const }, { role: 'asc' as const }, { slot: 'asc' as const }] },
 };
 const memberName = (member: { firstName: string; lastName: string }) =>
   `${member.firstName} ${member.lastName === '—' ? '' : member.lastName}`.trim();
@@ -26,7 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const input = inputSchema.parse(await request.json().catch(() => ({})));
     const prisma = getPrisma();
     const [service, settings] = await Promise.all([
-      prisma.weeklyService.findUnique({ where: { id }, include: { assignments: { include: { member: { include: { unavailability: true } } }, orderBy: [{ role: 'asc' }, { slot: 'asc' }] } } }),
+      prisma.weeklyService.findUnique({ where: { id }, include: { assignments: { include: { member: { include: { unavailability: true, recurringUnavailability: { where: { active: true } } } } }, orderBy: [{ role: 'asc' }, { slot: 'asc' }] } } }),
       prisma.settings.findUnique({ where: { id: 'default' } }),
     ]);
     if (!service) return NextResponse.json({ error: 'Služba nebyla nalezena.' }, { status: 404 });
@@ -48,6 +47,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         serviceCount: 0,
         lastService: null,
         unavailable: member.unavailability.map((unavailable) => ({ from: unavailable.from, to: unavailable.to })),
+        recurringUnavailable: member.recurringUnavailability.map((rule) => ({ anchorStart: rule.anchorStart, durationMinutes: rule.durationMinutes, intervalMinutes: rule.intervalMinutes })),
       };
       return { role: item.role as Role, member: candidate, mode: item.selectionMode };
     });

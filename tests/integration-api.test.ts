@@ -87,7 +87,7 @@ test("potvrzená služba zachová v Integration API nevyřešený záskok jako v
   assert.equal(serialized.replacements[0].valid, false);
   assert.equal(serialized.replacements[0].replacementMemberId, null);
 });
-test("current crew vrací dočasné role bez duplicit", () => {
+test("current crew ignoruje staré dočasné role", () => {
   const source = service();
   source.temporaryAssignments = [
     { id: "t1", from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), role: "COMMANDER", slot: 1, memberId: "m4", originalAssignmentId: "a1", member: { firstName: "Čtvrtý", lastName: "Člen", dt: true } },
@@ -96,7 +96,7 @@ test("current crew vrací dočasné role bez duplicit", () => {
     { id: "t4", from: new Date("2026-09-08T04:00:00Z"), to: new Date("2026-09-09T04:00:00Z"), role: "FIREFIGHTER", slot: 2, memberId: "m5", originalAssignmentId: "a4", member: { firstName: "Pátý", lastName: "Člen", dt: false } },
   ];
   const crew = effectiveIntegrationCrew(source, new Date("2026-09-08T10:00:00Z"));
-  assert.deepEqual(crew.map((item) => `${item.role}:${item.memberId}`), ["COMMANDER:m4", "DRIVER:m2", "FIREFIGHTER:m3", "FIREFIGHTER:m5"]);
+  assert.deepEqual(crew.map((item) => `${item.role}:${item.memberId}`), ["COMMANDER:m1", "DRIVER:m2", "FIREFIGHTER:m3", "FIREFIGHTER:m4"]);
   assert.equal(new Set(crew.map((item) => item.memberId)).size, 4);
 });
 

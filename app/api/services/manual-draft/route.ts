@@ -12,12 +12,13 @@ const postSchema = z.object({
   assignments: z.array(z.object({ role: z.enum(["COMMANDER", "DRIVER", "FIREFIGHTER"]), slot: z.number().int().min(1).max(2), memberId: z.string().min(1) })).length(4),
 });
 
-type ManualMember = { id:string; firstName:string; lastName:string; active:boolean; systemAccount:boolean; reserveOnly:boolean; dt:boolean; medicalExamAt:Date|null; medicalValidUntil:Date|null; canCommand:boolean; canDrive:boolean; canFight:boolean; unavailability:{from:Date;to:Date}[] };
+type ManualMember = { id:string; firstName:string; lastName:string; active:boolean; systemAccount:boolean; reserveOnly:boolean; dt:boolean; medicalExamAt:Date|null; medicalValidUntil:Date|null; canCommand:boolean; canDrive:boolean; canFight:boolean; unavailability:{from:Date;to:Date}[]; recurringUnavailability:{anchorStart:Date;durationMinutes:number;intervalMinutes:number}[] };
 const toCandidate = (member: ManualMember): Candidate => ({
   id: member.id, name: `${member.firstName} ${member.lastName === "—" ? "" : member.lastName}`.trim(), active: member.active, system: member.systemAccount, reserveOnly: member.reserveOnly, dt: member.dt,
   medicalExam: member.medicalExamAt, medicalValidUntil: member.medicalValidUntil,
   roles: [member.canCommand && "COMMANDER", member.canDrive && "DRIVER", member.canFight && "FIREFIGHTER"].filter(Boolean) as Role[],
   serviceCount: 0, lastService: null, unavailable: member.unavailability,
+  recurringUnavailable: member.recurringUnavailability,
 });
 
 async function context(reference: Date) {
