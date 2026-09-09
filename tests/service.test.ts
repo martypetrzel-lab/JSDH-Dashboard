@@ -1299,3 +1299,31 @@ test("překrývající se běžná a opakovaná absence vytvoří jediný jednod
   assert.equal(result.replacements[0].replacementMemberId, "petrzel-matej");
   assert.deepEqual(memberOutages(matej, week.start, week.end), []);
 });
+
+const septemberWeek = { start: new Date("2026-09-21T04:00:00Z"), end: new Date("2026-09-28T04:00:00Z") };
+test("absence začínající uvnitř týdne nevyřadí libovolného člena z base crew", () => {
+  const member = base("libovolny-clen", ["FIREFIGHTER"]);
+  member.unavailable = [{ from: new Date("2026-09-24T04:00:00Z"), to: new Date("2026-10-02T04:00:00Z") }];
+  assert.equal(baseCrewEligibility(member, "FIREFIGHTER", septemberWeek.start, septemberWeek.end).eligible, true);
+  assert.deepEqual(memberOutages(member, septemberWeek.start, septemberWeek.end), [{ from: new Date("2026-09-24T04:00:00Z"), to: septemberWeek.end, source: "UNAVAILABILITY" }]);
+});
+
+test("souvislé navazující absence se sloučí a vyřadí člena na celý týden", () => {
+  const member = base("navazujici", ["FIREFIGHTER"]), boundary = new Date("2026-09-23T04:00:00Z");
+  member.unavailable = [{ from: septemberWeek.start, to: boundary }, { from: boundary, to: septemberWeek.end }];
+  assert.equal(memberOutages(member, septemberWeek.start, septemberWeek.end).length, 1);
+  assert.equal(baseCrewEligibility(member, "FIREFIGHTER", septemberWeek.start, septemberWeek.end).eligible, false);
+});
+
+test("jednominutová mezera mezi absencemi zachová způsobilost base crew", () => {
+  const member = base("minutova-mezera", ["FIREFIGHTER"]), gapStart = new Date("2026-09-23T04:00:00Z"), gapEnd = new Date(gapStart.getTime() + 60000);
+  member.unavailable = [{ from: septemberWeek.start, to: gapStart }, { from: gapEnd, to: septemberWeek.end }];
+  assert.equal(fullyUnavailable(member, septemberWeek.start, septemberWeek.end), false);
+  assert.equal(baseCrewEligibility(member, "FIREFIGHTER", septemberWeek.start, septemberWeek.end).eligible, true);
+});
+
+test("částečná recurring směna nevyřadí člena z base crew", () => {
+  const member = base("recurring-cast", ["FIREFIGHTER"]);
+  member.recurringUnavailable = [{ anchorStart: new Date("2026-09-24T04:00:00Z"), durationMinutes: 1440, intervalMinutes: 5760 }];
+  assert.equal(baseCrewEligibility(member, "FIREFIGHTER", septemberWeek.start, septemberWeek.end).eligible, true);
+});

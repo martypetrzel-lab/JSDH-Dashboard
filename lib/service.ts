@@ -951,7 +951,7 @@ export function memberOutages(member: Candidate, start: Date, end: Date): Member
   const merged: MemberOutage[] = [];
   for (const outage of sorted) {
     const previous = merged.at(-1);
-    if (!previous || outage.from.getTime() >= previous.to.getTime()) {
+    if (!previous || outage.from.getTime() > previous.to.getTime()) {
       merged.push({ ...outage });
       continue;
     }

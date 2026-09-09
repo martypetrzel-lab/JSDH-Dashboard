@@ -55,6 +55,7 @@ const candidate = (member: {
   canDrive: boolean;
   canFight: boolean;
   unavailability: { from: Date; to: Date }[];
+  recurringUnavailability: { anchorStart: Date; durationMinutes: number; intervalMinutes: number }[];
 }): Candidate => ({
   id: member.id,
   name: `${member.firstName} ${member.lastName === "—" ? "" : member.lastName}`.trim(),
@@ -72,6 +73,7 @@ const candidate = (member: {
   serviceCount: 0,
   lastService: null,
   unavailable: member.unavailability,
+  recurringUnavailable: member.recurringUnavailability,
 });
 
 export async function PATCH(
@@ -92,14 +94,14 @@ export async function PATCH(
           where: { id },
           include: {
             assignments: {
-              include: { member: { include: { unavailability: true } } },
+              include: { member: { include: { unavailability: true, recurringUnavailability: { where: { active: true } } } } },
             },
           },
         }),
         prisma.settings.findUnique({ where: { id: "default" } }),
         prisma.member.findUnique({
           where: { id: input.memberId },
-          include: { unavailability: true },
+          include: { unavailability: true, recurringUnavailability: { where: { active: true } } },
         }),
       ]);
     if (!service || service.status === "CONFIRMED")
