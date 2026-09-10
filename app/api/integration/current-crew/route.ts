@@ -1,7 +1,9 @@
 import { getPrisma } from "@/lib/prisma";
 import {
   effectiveIntegrationCrew,
+  integrationOptions,
   integrationResponse,
+  integrationRoute,
   integrationServiceInclude,
   requireIntegrationApi,
   serializeIntegrationCrew,
@@ -11,7 +13,9 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export const OPTIONS = integrationOptions;
+
+async function get(request: Request) {
   const unauthorized = requireIntegrationApi(request);
   if (unauthorized) return unauthorized;
   const now = new Date();
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
     }),
   ]);
   if (!service)
-    return integrationResponse({ service: null, currentCrew: [] }, now);
+    return integrationResponse(request, { service: null, currentCrew: [] }, now);
 
   const minimumDt = settings?.minimumDt ?? 1;
   const currentCrew = effectiveIntegrationCrew(service, now);
@@ -40,6 +44,7 @@ export async function GET(request: Request) {
     dtCount >= minimumDt &&
     activeReplacements.every((item) => item.valid && item.replacementMemberId);
   return integrationResponse(
+    request,
     {
       service: {
         id: service.id,
@@ -60,3 +65,5 @@ export async function GET(request: Request) {
     now,
   );
 }
+
+export const GET = integrationRoute(get);

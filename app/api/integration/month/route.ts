@@ -1,7 +1,9 @@
 import { getPrisma } from "@/lib/prisma";
 import {
   integrationError,
+  integrationOptions,
   integrationResponse,
+  integrationRoute,
   integrationServiceInclude,
   requireIntegrationApi,
   serializeIntegrationService,
@@ -12,12 +14,14 @@ import { DEFAULT_SERVICE_SETTINGS, serviceWeeksForMonth } from "@/lib/service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export const OPTIONS = integrationOptions;
+
+async function get(request: Request) {
   const unauthorized = requireIntegrationApi(request);
   if (unauthorized) return unauthorized;
   const month = new URL(request.url).searchParams.get("month");
   if (!validIntegrationMonth(month))
-    return integrationError("month must use YYYY-MM format");
+    return integrationError(request, "month must use YYYY-MM format");
   const selectedMonth = month!;
 
   const now = new Date();
@@ -40,6 +44,7 @@ export async function GET(request: Request) {
     orderBy: { weekStart: "asc" },
   });
   return integrationResponse(
+    request,
     {
       month: selectedMonth,
       services: services.map((service) => ({
@@ -50,3 +55,5 @@ export async function GET(request: Request) {
     now,
   );
 }
+
+export const GET = integrationRoute(get);

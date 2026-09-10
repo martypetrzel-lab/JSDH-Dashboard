@@ -2,13 +2,17 @@ import { conditioningAttention } from "@/lib/conditioning";
 import { loadIntegrationConditioningData } from "@/lib/integration-data-server";
 import {
   integrationMemberName,
+  integrationOptions,
   integrationResponse,
+  integrationRoute,
   requireIntegrationApi,
 } from "@/lib/integration-api";
 import { getPrisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export const OPTIONS = integrationOptions;
 
 function pragueToday(date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -23,7 +27,7 @@ function pragueToday(date: Date) {
   return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12));
 }
 
-export async function GET(request: Request) {
+async function get(request: Request) {
   const unauthorized = requireIntegrationApi(request);
   if (unauthorized) return unauthorized;
   const now = new Date();
@@ -99,7 +103,7 @@ export async function GET(request: Request) {
       issue: replacement.issue,
     })),
   ]);
-  return integrationResponse({
+  return integrationResponse(request, {
     totals: {
       dt: dt.length,
       drivers: drivers.length,
@@ -110,3 +114,5 @@ export async function GET(request: Request) {
     items: { dt, drivers, medical, services: serviceItems },
   }, now);
 }
+
+export const GET = integrationRoute(get);

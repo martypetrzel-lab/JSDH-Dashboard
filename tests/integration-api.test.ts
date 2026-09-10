@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import {
   effectiveIntegrationCrew,
   integrationAuthorized,
@@ -12,6 +13,7 @@ import {
 } from "../lib/integration-core.ts";
 import { conditioningAttention, driverDuty, dtDuty } from "../lib/conditioning.ts";
 import { recurringOccurrences } from "../lib/service.ts";
+import { integrationCorsHeaders } from "../lib/integration-cors.ts";
 
 const weekStart = new Date("2026-09-07T04:00:00.000Z");
 const weekEnd = new Date("2026-09-14T04:00:00.000Z");
@@ -41,6 +43,61 @@ test("integration API odmítne chybějící a špatný klíč a správný přijm
   assert.equal(integrationAuthorized(request), true);
   if (previous === undefined) delete process.env.INTEGRATION_API_KEY;
   else process.env.INTEGRATION_API_KEY = previous;
+});
+
+test("integration API podporuje CORS pouze pro nakonfigurované originy", () => {
+  const previous = process.env.INTEGRATION_ALLOWED_ORIGINS;
+  process.env.INTEGRATION_ALLOWED_ORIGINS = "http://localhost:5173, http://localhost:3000";
+
+  const allowed = integrationCorsHeaders(new Request(
+    "http://localhost/api/integration/current-crew",
+    { headers: { Origin: "http://localhost:5173" } },
+  ));
+  assert.equal(allowed.get("Access-Control-Allow-Origin"), "http://localhost:5173");
+  assert.equal(allowed.get("Access-Control-Max-Age"), "86400");
+
+  const denied = integrationCorsHeaders(new Request(
+    "http://localhost/api/integration/current-crew",
+    { headers: { Origin: "https://example.invalid" } },
+  ));
+  assert.equal(denied.has("Access-Control-Allow-Origin"), false);
+
+  if (previous === undefined) delete process.env.INTEGRATION_ALLOWED_ORIGINS;
+  else process.env.INTEGRATION_ALLOWED_ORIGINS = previous;
+});
+
+test("current-crew endpoint vrací korektní CORS preflight a CORS také při 401", () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const child = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--experimental-test-module-mocks",
+      "--test",
+      "tests/support/integration-cors.mts",
+    ],
+    { encoding: "utf8", timeout: 30000, env },
+  );
+
+  assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
+  assert.match(child.stdout, /tests 4/);
+});
+
+test("všechny integrační endpointy používají společný OPTIONS a CORS wrapper", () => {
+  for (const endpoint of [
+    "alerts",
+    "conditioning",
+    "current-crew",
+    "month",
+    "next-service",
+    "unavailability",
+  ]) {
+    const source = readFileSync(`app/api/integration/${endpoint}/route.ts`, "utf8");
+    assert.match(source, /export const OPTIONS = integrationOptions/);
+    assert.match(source, /export const GET = integrationRoute\(get\)/);
+  }
 });
 
 test("current crew bez aktuální potvrzené služby vrátí null", () => {

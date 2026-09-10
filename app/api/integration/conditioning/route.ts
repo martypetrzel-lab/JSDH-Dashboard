@@ -5,12 +5,14 @@ import {
   pragueMonth,
 } from "@/lib/conditioning";
 import { loadIntegrationConditioningData } from "@/lib/integration-data-server";
-import { integrationResponse, requireIntegrationApi } from "@/lib/integration-api";
+import { integrationOptions, integrationResponse, integrationRoute, requireIntegrationApi } from "@/lib/integration-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export const OPTIONS = integrationOptions;
+
+async function get(request: Request) {
   const unauthorized = requireIntegrationApi(request);
   if (unauthorized) return unauthorized;
   const now = new Date();
@@ -43,5 +45,7 @@ export async function GET(request: Request) {
       kilometers: last?.kilometers ?? null,
     };
   });
-  return integrationResponse({ dt, drivers }, now);
+  return integrationResponse(request, { dt, drivers }, now);
 }
+
+export const GET = integrationRoute(get);

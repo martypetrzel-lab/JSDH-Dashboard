@@ -79,6 +79,8 @@ Návrh služby lze úplně smazat. Potvrzená služba se kvůli historii nemaže
 
 Všechny integrační endpointy vyžadují serverovou proměnnou `INTEGRATION_API_KEY` a hlavičku `Authorization: Bearer <klíč>`. Klíč neposílejte v URL ani ve frontendovém kódu. Odpovědi používají ISO 8601, časové pásmo `Europe/Prague` a hlavičku `Cache-Control: no-store`.
 
+Volání z prohlížeče podporuje CORS. Výchozí povolený origin je `http://localhost:5173`. Volitelnou serverovou proměnnou `INTEGRATION_ALLOWED_ORIGINS` lze nastavit na jeden origin nebo na více originů oddělených čárkou, například `http://localhost:5173,http://localhost:3000`. Hodnoty musí obsahovat schéma a port, nesmí obsahovat cestu. Preflight `OPTIONS` nevyžaduje Bearer token; všechny požadavky `GET` jej nadále vyžadují.
+
 ```bash
 curl -H "Authorization: Bearer $JSDH_API_KEY" \
   https://DOMAIN/api/integration/current-crew
@@ -116,10 +118,11 @@ Health check je dostupný na `/api/health`. Vrací pouze stav služby a žádné
 6. Nastavte `ADMIN_PASSWORD` na zvolené heslo prostřednictvím Railway Variables.
 7. Nastavte náhodný `SESSION_SECRET` o délce alespoň 32 znaků.
 8. Nastavte dlouhý náhodný `INTEGRATION_API_KEY` pro integrační REST API.
-9. Nastavte `TZ=Europe/Prague`.
-10. Pre-deploy kroky přebírejte z `railway.toml`: nejprve `npx prisma migrate deploy`, potom `npm run training:topics:import`. Pokud máte vlastní přepsaný příkaz v Railway, zahrňte oba kroky v tomto pořadí.
-11. Spusťte deploy.
-12. V části Networking zvolte **Generate Domain**.
+9. Podle potřeby nastavte `INTEGRATION_ALLOWED_ORIGINS`, například na `http://localhost:5173`.
+10. Nastavte `TZ=Europe/Prague`.
+11. Pre-deploy kroky přebírejte z `railway.toml`: nejprve `npx prisma migrate deploy`, potom `npm run training:topics:import`. Pokud máte vlastní přepsaný příkaz v Railway, zahrňte oba kroky v tomto pořadí.
+12. Spusťte deploy.
+13. V části Networking zvolte **Generate Domain**.
 
 Soubor `railway.toml` nastavuje Railpack, build, bezpečné nasazení migrací, start aplikace a health check. `prisma migrate deploy` pouze aplikuje dosud chybějící verzované migrace; neresetuje a nemaže existující produkční data. Next.js automaticky respektuje proměnnou `PORT`, kterou přiděluje Railway.
 
@@ -131,6 +134,8 @@ Soubor `railway.toml` nastavuje Railpack, build, bezpečné nasazení migrací, 
 - `SESSION_SECRET`
 - `INTEGRATION_API_KEY`
 - `TZ`
+
+Volitelná proměnná `INTEGRATION_ALLOWED_ORIGINS` omezuje browserové CORS požadavky; bez ní se použije `http://localhost:5173`.
 
 Aplikace bez těchto hodnot nepoužije nebezpečné výchozí přihlašovací údaje a vrátí srozumitelnou serverovou chybu.
 

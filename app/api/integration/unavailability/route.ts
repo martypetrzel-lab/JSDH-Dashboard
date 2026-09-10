@@ -1,7 +1,9 @@
 import {
   integrationError,
   integrationMemberName,
+  integrationOptions,
   integrationResponse,
+  integrationRoute,
   parseIntegrationRangeValue,
   requireIntegrationApi,
 } from "@/lib/integration-api";
@@ -11,7 +13,9 @@ import { recurringOccurrences } from "@/lib/service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export const OPTIONS = integrationOptions;
+
+async function get(request: Request) {
   const unauthorized = requireIntegrationApi(request);
   if (unauthorized) return unauthorized;
   const now = new Date();
@@ -22,7 +26,7 @@ export async function GET(request: Request) {
       params.get("to"),
       new Date(now.getTime() + 30 * 86400000),
     );
-    if (from >= to) return integrationError("from must be before to");
+    if (from >= to) return integrationError(request, "from must be before to");
     const prisma = getPrisma();
     const [unavailability, recurring] = await Promise.all([
       prisma.unavailability.findMany({
@@ -53,7 +57,7 @@ export async function GET(request: Request) {
         reason: rule.reason,
       })),
     ).sort((left, right) => left.from.localeCompare(right.from));
-    return integrationResponse({
+    return integrationResponse(request, {
       from: from.toISOString(),
       to: to.toISOString(),
       unavailability: unavailability.map((item) => ({
@@ -66,6 +70,8 @@ export async function GET(request: Request) {
       workShifts,
     }, now);
   } catch (error) {
-    return integrationError(error instanceof Error ? error.message : "Invalid date range");
+    return integrationError(request, error instanceof Error ? error.message : "Invalid date range");
   }
 }
+
+export const GET = integrationRoute(get);
