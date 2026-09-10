@@ -1,7 +1,7 @@
 export type ActivityType='CONDITIONING'|'INCIDENT';
 export type DtActivityRow={id:string;memberId:string;date:string;type:ActivityType;cylinderNumber:string;carrierNumber:string;maskNumber:string;incidentReference:string;note:string};
 export type DriverActivityRow={id:string;memberId:string;date:string;type:ActivityType;vehicle:string;kilometers:number|null;incidentReference:string;note:string};
-export type ConditioningMember={id:string;name:string;dt:boolean;canDrive:boolean};
+export type ConditioningMember={id:string;name:string;dt:boolean;canDrive:boolean;medicalValidUntil?:string|null;systemAccount?:boolean};
 export type ConditioningData={members:ConditioningMember[];dtActivities:DtActivityRow[];driverActivities:DriverActivityRow[];warningDays:number};
 
 const dateOnly=(date:Date)=>new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate(),12));
@@ -15,5 +15,15 @@ export function czechMonthLabel(date:Date){return new Intl.DateTimeFormat('cs-CZ
 export function latestDtActivity(memberId:string,activities:DtActivityRow[]){return activities.filter(activity=>activity.memberId===memberId).sort((left,right)=>right.date.localeCompare(left.date))[0]??null;}
 export function latestDriverActivity(memberId:string,activities:DriverActivityRow[]){return activities.filter(activity=>activity.memberId===memberId).sort((left,right)=>right.date.localeCompare(left.date))[0]??null;}
 export function dtDuty(member:ConditioningMember,activities:DtActivityRow[],now=new Date(),warningDays=30){if(!member.dt)return null;const last=latestDtActivity(member.id,activities);if(!last)return{last:null,due:null,days:null,status:'missing' as const};const due=addCalendarMonths(parseActivityDate(last.date),3),today=pragueDateOnly(now),days=Math.ceil((due.getTime()-today.getTime())/86400000);return{last,due:activityDateValue(due),days,status:days<0?'expired' as const:days<=warningDays?'warning' as const:'ok' as const};}
-export function driverDuty(member:ConditioningMember,activities:DriverActivityRow[],now=new Date()){if(!member.canDrive)return null;const current=pragueMonth(now),inMonth=activities.filter(activity=>activity.memberId===member.id).some(activity=>{const date=parseActivityDate(activity.date);return date.getUTCFullYear()===current.year&&date.getUTCMonth()+1===current.month;});return{fulfilled:inMonth,last:latestDriverActivity(member.id,activities)};}
+export function driverDuty(member:ConditioningMember,activities:DriverActivityRow[],now=new Date()){if(!member.canDrive)return null;const current=pragueMonth(now),currentActivity=activities.filter(activity=>{if(activity.memberId!==member.id)return false;const date=parseActivityDate(activity.date);return date.getUTCFullYear()===current.year&&date.getUTCMonth()+1===current.month;}).sort((left,right)=>right.date.localeCompare(left.date))[0]??null;const nextDue=new Date(Date.UTC(current.year,current.month+1,0,12));return{fulfilled:currentActivity!==null,last:latestDriverActivity(member.id,activities),currentActivity,nextDue:activityDateValue(nextDue)};}
+export function medicalDuty(member:ConditioningMember,now=new Date(),warningDays=60){if(!member.medicalValidUntil)return{validUntil:null,days:null,status:'missing' as const};const validUntil=parseActivityDate(member.medicalValidUntil),today=pragueDateOnly(now),days=Math.ceil((validUntil.getTime()-today.getTime())/86400000);return{validUntil:member.medicalValidUntil,days,status:days<0?'expired' as const:days<=warningDays?'warning' as const:'ok' as const};}
+export function conditioningDutySummary(data:ConditioningData,now=new Date()){
+  const members=data.members.filter(member=>!member.systemAccount);
+  return{
+    dt:members.filter(member=>member.dt).map(member=>{const duty=dtDuty(member,data.dtActivities,now,data.warningDays)!;return{name:member.name,status:duty.status,last:duty.last?.date??null,due:duty.due,days:duty.days};}),
+    drivers:members.filter(member=>member.canDrive).map(member=>{const duty=driverDuty(member,data.driverActivities,now)!;return{name:member.name,fulfilled:duty.fulfilled,date:duty.currentActivity?.date??null,vehicle:duty.currentActivity?.vehicle?.trim()||null,nextDue:duty.nextDue};}),
+    medical:members.map(member=>{const duty=medicalDuty(member,now);return{name:member.name,...duty};}),
+    monthLabel:czechMonthLabel(now),
+  };
+}
 export function conditioningAttention(data:ConditioningData,now=new Date()){const dt=data.members.map(member=>({member,duty:dtDuty(member,data.dtActivities,now,data.warningDays)})).filter(item=>item.duty&&item.duty.status!=='ok');const drivers=data.members.map(member=>({member,duty:driverDuty(member,data.driverActivities,now)})).filter(item=>item.duty&&!item.duty.fulfilled);return{dt,drivers,monthLabel:czechMonthLabel(now)};}

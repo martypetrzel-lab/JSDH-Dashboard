@@ -30,7 +30,7 @@ Tlačítko **Upravit sestavu** zpřístupní ruční výběr kandidátů pro ka�
 
 Modul **Kondice a povinnosti** eviduje použití dýchací techniky aktivních členů s `dt=true` a měsíční jízdy všech aktivních členů s `canDrive=true`. Kondiční i zásahová událost se započítává stejně. Další termín DT je přesně tři kalendářní měsíce od nejnovější události; upozornění se standardně zobrazí 30 dní předem. Jízdy se vyhodnocují podle aktuálního kalendářního měsíce v `Europe/Prague`.
 
-Záznamy lze vytvářet, upravovat i odstraňovat a každá změna vzniká společně se záznamem v AuditLogu. Ruční WhatsApp sdílení potvrzené služby obsahuje pouze povinnosti, které vyžadují pozornost, nikoli kompletní seznam členů.
+Záznamy lze vytvářet, upravovat i odstraňovat a každá změna vzniká společně se záznamem v AuditLogu. Ruční WhatsApp sdílení potvrzené služby obsahuje společný přehled DT, kondičních jízd a zdravotních prohlídek. U DT a jízd rozlišuje splněné a chybějící povinnosti, u zdravotních prohlídek zobrazuje pouze neplatné, chybějící a končící do 60 dní.
 
 ## Požadavky
 
