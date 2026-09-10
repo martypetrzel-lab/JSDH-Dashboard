@@ -157,8 +157,7 @@ export async function sessionsGet(request: Request) {
         date: true,
         durationMinutes: true,
         participants: {
-          where: { status: 'PRESENT' },
-          select: { memberId: true },
+          select: { memberId: true, status: true },
         },
       },
       orderBy: { date: 'desc' },
@@ -186,7 +185,21 @@ export async function sessionsGet(request: Request) {
     summary: {
       count: completed.length,
       minutes: completed.reduce((n, s) => n + s.durationMinutes, 0),
-      attendances: completed.reduce((n, s) => n + s.participants.length, 0),
+      attendances: completed.reduce(
+        (n, s) =>
+          n + s.participants.filter((p) => p.status === 'PRESENT').length,
+        0,
+      ),
+      attendancePercent: (() => {
+        const records = completed.flatMap((session) => session.participants);
+        return records.length
+          ? Math.round(
+              (records.filter((record) => record.status === 'PRESENT').length /
+                records.length) *
+                100,
+            )
+          : null;
+      })(),
       last: latest?.date ?? null,
     },
   });

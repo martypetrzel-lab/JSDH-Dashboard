@@ -24,9 +24,15 @@ Tlačítko Prezenční listina PDF vytváří A4 dokument s tématy, školitelem
 
 PDF se generuje na serveru z uloženého záznamu pomocí pdf-lib a lokálně vloženého fontu Noto Sans (licence OFL v assets/fonts/OFL.txt). Font je součástí produkčního balíčku, nevyžaduje síť ani fonty operačního systému. PDF se vrací s private/no-store. Dokument netvrdí úřední schválení ani certifikaci.
 
+## Statistiky účasti
+
+Panel Statistiky účasti počítá pouze dokončená školení a existující záznamy TrainingParticipant. Výchozím obdobím je aktuální kalendářní rok v Europe/Prague; k dispozici je aktuální či minulý měsíc, aktuální či minulý rok a vlastní rozsah. Přepínač členů standardně zahrnuje jen aktivní členy a systémové účty vylučuje vždy.
+
+Účast je podíl PRESENT ze všech evidovaných stavů PRESENT, ABSENT a EXCUSED. Člen bez záznamu má místo nuly pomlčku. Absolvovaný čas se přičítá pouze při PRESENT. Přehled lze řadit, otevřít detail člena a exportovat jako formální vícestránkové PDF; volitelný detail uvádí všechna témata každého školení. Samostatný PDF export je dostupný také v detailu člena. Exporty zapisují pouze technickou auditní událost bez obsahu dokumentu.
+
 ## API a ověření
 
-Všechny /api/training endpointy vyžadují současnou administrátorskou session. U dokončeného záznamu předá PATCH příznak completedAcknowledged=true. DELETE vyžaduje confirmed=true a u dokončeného záznamu také completedAcknowledged=true. Změny i audit jsou v transakci; editace stejného školení se serializují databázovým zámkem.
+Všechny /api/training endpointy vyžadují současnou administrátorskou session. Statistiky poskytují agregovaný endpoint `/api/training/statistics`, detail člena a oba PDF exporty; období se předává pomocí `from`, `to` a volitelného `activeOnly`. U dokončeného záznamu předá PATCH příznak completedAcknowledged=true. DELETE vyžaduje confirmed=true a u dokončeného záznamu také completedAcknowledged=true. Změny i audit jsou v transakci; editace stejného školení se serializují databázovým zámkem.
 
 Testy pokrývají validaci, migraci v izolovaném PostgreSQL enginu PGlite, duplicity knihovny, API s mockovanou databází a autentizací, ochranu dokončených záznamů, docházku a vícestránkové PDF. Žádná skutečná data členů se nepoužívají ani nevkládají do seedu. Spuštění: npm test, npm run lint, npm run build.
 

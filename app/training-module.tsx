@@ -19,6 +19,12 @@ import {
   type TrainingMember,
 } from '@/lib/training';
 import { fromLocalDateTimeInput, toLocalDateTimeInput } from '@/lib/service';
+import {
+  formatTrainingMinutes,
+  statisticsPresetPeriod,
+  type TrainingStatistics,
+  type TrainingStatisticsMember,
+} from '@/lib/training-statistics';
 
 const name = (m: TrainingMember) =>
   [m.firstName, m.lastName === '—' ? '' : m.lastName].filter(Boolean).join(' ');
@@ -64,6 +70,19 @@ async function downloadPdf(id: string) {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+async function downloadFile(url: string, filename: string) {
+  const response = await fetch(url);
+  if (!response.ok)
+    throw new Error(
+      (await response.json()).error || 'PDF se nepodařilo vytvořit.',
+    );
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+}
 type Data = {
   sessions: TrainingSessionRow[];
   members: TrainingMember[];
@@ -71,6 +90,7 @@ type Data = {
     count: number;
     minutes: number;
     attendances: number;
+    attendancePercent: number | null;
     last: string | null;
   };
 };
@@ -90,7 +110,9 @@ export function TrainingModule({
 }: {
   notify: (message: string) => void;
 }) {
-  const [view, setView] = useState<'HOME' | 'TOPICS' | 'ARCHIVE'>('HOME');
+  const [view, setView] = useState<
+    'HOME' | 'TOPICS' | 'ARCHIVE' | 'STATISTICS'
+  >('HOME');
   const [data, setData] = useState<Data | null>(null),
     [topics, setTopics] = useState<TrainingTopicRow[]>([]);
   const [filters, setFilters] = useState(emptyFilters),
@@ -208,11 +230,19 @@ export function TrainingModule({
               : '—'}
           </strong>
         </article>
-        <article>
-          <span>Počet účastí členů</span>
-          <strong>{data?.summary.attendances ?? '—'}</strong>
-          <small>Přítomní na dokončených školeních letos</small>
-        </article>
+        <button
+          type="button"
+          className="training-summary-action"
+          onClick={() => setView('STATISTICS')}
+        >
+          <span>Účast členů</span>
+          <strong>
+            {data?.summary.attendancePercent == null
+              ? '—'
+              : `${data.summary.attendancePercent} %`}
+          </strong>
+          <small>Průměrná účast na dokončených školeních letos</small>
+        </button>
         <article>
           <span>Poslední školení</span>
           <strong>{data?.summary.last ? day(data.summary.last) : '—'}</strong>
@@ -224,6 +254,7 @@ export function TrainingModule({
             ['HOME', 'Přehled'],
             ['TOPICS', 'Témata'],
             ['ARCHIVE', 'Archiv školení'],
+            ['STATISTICS', 'Statistiky účasti'],
           ] as const
         ).map(([key, label]) => (
           <Button
@@ -241,7 +272,9 @@ export function TrainingModule({
         </p>
       )}
       {!data && !error && <p>Načítám školení…</p>}
-      {view === 'TOPICS' ? (
+      {view === 'STATISTICS' ? (
+        <TrainingStatisticsPanel notify={notify} />
+      ) : view === 'TOPICS' ? (
         <TopicLibrary
           topics={topics}
           onEdit={setTopicEditor}
@@ -1297,14 +1330,463 @@ function SessionEditor({
   );
 }
 
+type PeriodPreset =
+  | 'THIS_MONTH'
+  | 'LAST_MONTH'
+  | 'THIS_YEAR'
+  | 'LAST_YEAR'
+  | 'CUSTOM';
+
+function presetDates(
+  preset: Exclude<PeriodPreset, 'CUSTOM'>,
+  now = new Date(),
+) {
+  const period = statisticsPresetPeriod(preset, now);
+  return { from: period.from, to: period.to };
+}
+
+const attendanceTone = (percent: number | null) => {
+  if (percent === null) return 'none';
+  if (percent >= 90) return 'excellent';
+  if (percent >= 75) return 'good';
+  if (percent >= 50) return 'warning';
+  return 'critical';
+};
+
+function TrainingStatisticsPanel({
+  notify,
+}: {
+  notify: (message: string) => void;
+}) {
+  const initial = presetDates('THIS_YEAR');
+  const [preset, setPreset] = useState<PeriodPreset>('THIS_YEAR');
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+  const [activeOnly, setActiveOnly] = useState(true);
+  const [sort, setSort] = useState('name');
+  const [statistics, setStatistics] = useState<TrainingStatistics | null>(null);
+  const [detail, setDetail] = useState<TrainingStatisticsMember | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [includeDetails, setIncludeDetails] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const choosePreset = (next: Exclude<PeriodPreset, 'CUSTOM'>) => {
+    const dates = presetDates(next);
+    setPreset(next);
+    setFrom(dates.from);
+    setTo(dates.to);
+  };
+  useEffect(() => {
+    let current = true;
+    const query = new URLSearchParams({
+      from,
+      to,
+      activeOnly: String(activeOnly),
+    });
+    api<TrainingStatistics>('/api/training/statistics?' + query)
+      .then((result) => {
+        if (current) {
+          setStatistics(result);
+          setError('');
+        }
+      })
+      .catch((reason) => {
+        if (current)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'Statistiku nelze načíst.',
+          );
+      });
+    return () => {
+      current = false;
+    };
+  }, [from, to, activeOnly]);
+  const members = [...(statistics?.members ?? [])].sort((a, b) => {
+    if (sort === 'name') return a.name.localeCompare(b.name, 'cs');
+    const key =
+      sort === 'percent'
+        ? 'attendancePercent'
+        : sort === 'hours'
+          ? 'durationMinutes'
+          : sort;
+    const left = a[key as keyof TrainingStatisticsMember];
+    const right = b[key as keyof TrainingStatisticsMember];
+    return Number(right ?? -1) - Number(left ?? -1);
+  });
+  const exportQuery = (details = false) =>
+    new URLSearchParams({
+      from,
+      to,
+      activeOnly: String(activeOnly),
+      details: String(details),
+    }).toString();
+  const exportStatistics = async () => {
+    setBusy(true);
+    try {
+      await downloadFile(
+        '/api/training/statistics/export?' + exportQuery(includeDetails),
+        'prehled-odborne-pripravy.pdf',
+      );
+      setExportOpen(false);
+      notify('Přehled odborné přípravy byl vygenerován.');
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : 'PDF nelze vytvořit.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const summary = statistics?.summary;
+  return (
+    <div className="training-statistics">
+      <article className="panel">
+        <div className="training-statistics-heading">
+          <div>
+            <span className="section-kicker">Statistika účasti</span>
+            <h3>Statistiky účasti na odborné přípravě</h3>
+          </div>
+          <Button
+            disabled={!summary?.sessions}
+            onClick={() => setExportOpen(true)}
+          >
+            Export PDF
+          </Button>
+        </div>
+        <div className="training-period-presets">
+          {(
+            [
+              ['THIS_MONTH', 'Tento měsíc'],
+              ['LAST_MONTH', 'Minulý měsíc'],
+              ['THIS_YEAR', 'Tento rok'],
+              ['LAST_YEAR', 'Minulý rok'],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              variant={preset === value ? 'default' : 'outline'}
+              onClick={() => choosePreset(value)}
+            >
+              {label}
+            </Button>
+          ))}
+          <Button
+            variant={preset === 'CUSTOM' ? 'default' : 'outline'}
+            onClick={() => setPreset('CUSTOM')}
+          >
+            Vlastní období
+          </Button>
+        </div>
+        <div className="training-statistics-filters">
+          <label>
+            Od
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => {
+                setPreset('CUSTOM');
+                setFrom(event.target.value);
+              }}
+            />
+          </label>
+          <label>
+            Do
+            <input
+              type="date"
+              min={from}
+              value={to}
+              onChange={(event) => {
+                setPreset('CUSTOM');
+                setTo(event.target.value);
+              }}
+            />
+          </label>
+          <label>
+            Členové
+            <select
+              value={activeOnly ? 'active' : 'all'}
+              onChange={(event) =>
+                setActiveOnly(event.target.value === 'active')
+              }
+            >
+              <option value="active">Pouze aktivní členové</option>
+              <option value="all">Všichni členové</option>
+            </select>
+          </label>
+          <label>
+            Řazení
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+            >
+              <option value="name">Jméno A-Z</option>
+              <option value="percent">Účast %</option>
+              <option value="present">Přítomen</option>
+              <option value="absent">Nepřítomen</option>
+              <option value="excused">Omluven</option>
+              <option value="hours">Absolvované hodiny</option>
+            </select>
+          </label>
+        </div>
+      </article>
+      {error && <p className="training-error">{error}</p>}
+      {!statistics && !error && <p>Načítám statistiky účasti…</p>}
+      {statistics && (
+        <>
+          <div className="training-statistics-summary">
+            <article>
+              <span>Dokončená školení</span>
+              <strong>{summary!.sessions}</strong>
+            </article>
+            <article>
+              <span>Časová dotace</span>
+              <strong>{formatTrainingMinutes(summary!.durationMinutes)}</strong>
+            </article>
+            <article>
+              <span>Evidované účasti</span>
+              <strong>{summary!.attendanceRecords}</strong>
+            </article>
+            <article>
+              <span>Průměrná účast</span>
+              <strong>
+                {summary!.attendancePercent === null
+                  ? '—'
+                  : `${summary!.attendancePercent} %`}
+              </strong>
+            </article>
+            <article className="present">
+              <span>Přítomen</span>
+              <strong>{summary!.present}×</strong>
+            </article>
+            <article className="excused">
+              <span>Omluven</span>
+              <strong>{summary!.excused}×</strong>
+            </article>
+            <article className="absent">
+              <span>Nepřítomen</span>
+              <strong>{summary!.absent}×</strong>
+            </article>
+          </div>
+          {!summary!.sessions ? (
+            <article className="panel training-empty">
+              Ve zvoleném období nejsou žádná dokončená školení.
+            </article>
+          ) : (
+            <article className="panel training-statistics-results">
+              <div className="training-statistics-table">
+                <div className="training-statistics-row header">
+                  <span>Člen</span>
+                  <span>Přítomen</span>
+                  <span>Omluven</span>
+                  <span>Nepřítomen</span>
+                  <span>Evidovaných školení</span>
+                  <span>Absolvované hodiny</span>
+                  <span>Účast %</span>
+                  <span>Poslední účast</span>
+                </div>
+                {members.map((member) => (
+                  <button
+                    type="button"
+                    className="training-statistics-row"
+                    key={member.id}
+                    onClick={() => setDetail(member)}
+                  >
+                    <strong>{member.name}</strong>
+                    <span className="attendance-PRESENT">{member.present}</span>
+                    <span className="attendance-EXCUSED">{member.excused}</span>
+                    <span className="attendance-ABSENT">{member.absent}</span>
+                    <span>{member.recordedSessions}</span>
+                    <span>{formatTrainingMinutes(member.durationMinutes)}</span>
+                    <span
+                      className={
+                        'attendance-percent ' +
+                        attendanceTone(member.attendancePercent)
+                      }
+                    >
+                      {member.attendancePercent === null
+                        ? '—'
+                        : `${member.attendancePercent} %`}
+                    </span>
+                    <span>
+                      {member.lastAttendance ? day(member.lastAttendance) : '—'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="training-statistics-cards">
+                {members.map((member) => (
+                  <article key={member.id}>
+                    <div>
+                      <strong>{member.name}</strong>
+                      <span
+                        className={
+                          'attendance-percent ' +
+                          attendanceTone(member.attendancePercent)
+                        }
+                      >
+                        {member.attendancePercent === null
+                          ? '—'
+                          : `${member.attendancePercent} %`}
+                      </span>
+                    </div>
+                    <dl>
+                      <dt>Přítomen</dt>
+                      <dd>{member.present}</dd>
+                      <dt>Omluven</dt>
+                      <dd>{member.excused}</dd>
+                      <dt>Nepřítomen</dt>
+                      <dd>{member.absent}</dd>
+                      <dt>Absolvováno</dt>
+                      <dd>{formatTrainingMinutes(member.durationMinutes)}</dd>
+                    </dl>
+                    <Button variant="outline" onClick={() => setDetail(member)}>
+                      Detail
+                    </Button>
+                  </article>
+                ))}
+              </div>
+            </article>
+          )}
+        </>
+      )}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="training-dialog">
+          <DialogHeader>
+            <DialogTitle>Export přehledu PDF</DialogTitle>
+            <DialogDescription>
+              Období {day(from)} až {day(to)}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="training-check">
+            <input
+              type="checkbox"
+              checked={includeDetails}
+              onChange={(event) => setIncludeDetails(event.target.checked)}
+            />
+            Zahrnout detail školení jednotlivých členů
+          </label>
+          <div className="training-actions">
+            <Button variant="outline" onClick={() => setExportOpen(false)}>
+              Zrušit
+            </Button>
+            <Button disabled={busy} onClick={() => void exportStatistics()}>
+              {busy ? 'Generuji…' : 'Vygenerovat PDF'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
+        <DialogContent className="training-dialog training-statistics-detail">
+          <DialogHeader>
+            <DialogTitle>{detail?.name}</DialogTitle>
+            <DialogDescription>
+              Odborná příprava ve zvoleném období.
+            </DialogDescription>
+          </DialogHeader>
+          {detail && (
+            <>
+              <div className="training-statistics-summary member">
+                <article>
+                  <span>Účast</span>
+                  <strong>
+                    {detail.attendancePercent === null
+                      ? '—'
+                      : `${detail.attendancePercent} %`}
+                  </strong>
+                </article>
+                <article className="present">
+                  <span>Přítomen</span>
+                  <strong>{detail.present}</strong>
+                </article>
+                <article className="excused">
+                  <span>Omluven</span>
+                  <strong>{detail.excused}</strong>
+                </article>
+                <article className="absent">
+                  <span>Nepřítomen</span>
+                  <strong>{detail.absent}</strong>
+                </article>
+                <article>
+                  <span>Absolvováno</span>
+                  <strong>
+                    {formatTrainingMinutes(detail.durationMinutes)}
+                  </strong>
+                </article>
+              </div>
+              <div className="training-member-session-list">
+                {detail.sessions.map((session) => (
+                  <article key={session.id}>
+                    <strong>{day(session.date)}</strong>
+                    <span>
+                      {session.topics
+                        .map((topic) => topic.nameSnapshot)
+                        .join(' + ')}
+                    </span>
+                    <small>
+                      {formatTrainingMinutes(session.durationMinutes)} ·{' '}
+                      <span className={'attendance-' + session.status}>
+                        {attendanceLabels[session.status]}
+                      </span>
+                    </small>
+                  </article>
+                ))}
+              </div>
+              <div className="training-actions">
+                <Button variant="outline" onClick={() => setDetail(null)}>
+                  Zavřít
+                </Button>
+                <Button
+                  disabled={!detail.recordedSessions || busy}
+                  onClick={() =>
+                    void (async () => {
+                      setBusy(true);
+                      try {
+                        await downloadFile(
+                          `/api/training/statistics/member/${detail.id}/export?${exportQuery()}`,
+                          `odborna-priprava-${detail.name}.pdf`,
+                        );
+                        notify('Přehled člena byl vygenerován.');
+                      } catch (reason) {
+                        notify(
+                          reason instanceof Error
+                            ? reason.message
+                            : 'PDF nelze vytvořit.',
+                        );
+                      } finally {
+                        setBusy(false);
+                      }
+                    })()
+                  }
+                >
+                  Export PDF
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+type MemberTrainingStatisticsResponse = {
+  period: { from: string; to: string };
+  summary: TrainingStatisticsMember;
+  sessions: TrainingStatisticsMember['sessions'];
+};
+
 export function MemberTrainingHistory({ memberId }: { memberId: string }) {
-  const [sessions, setSessions] = useState<TrainingSessionRow[] | null>(null),
+  const [statistics, setStatistics] =
+      useState<MemberTrainingStatisticsResponse | null>(null),
     [error, setError] = useState('');
   useEffect(() => {
     let current = true;
-    api<Data>('/api/training/sessions?memberId=' + encodeURIComponent(memberId))
+    api<MemberTrainingStatisticsResponse>(
+      '/api/training/statistics/member/' +
+        encodeURIComponent(memberId) +
+        '?activeOnly=false',
+    )
       .then((data) => {
-        if (current) setSessions(data.sessions);
+        if (current) setStatistics(data);
       })
       .catch((e) => {
         if (current) setError(e.message);
@@ -1318,27 +1800,48 @@ export function MemberTrainingHistory({ memberId }: { memberId: string }) {
       <span className="section-kicker">Odborná příprava</span>
       {error ? (
         <p role="alert">{error}</p>
-      ) : sessions === null ? (
+      ) : statistics === null ? (
         <p>Načítám odbornou přípravu…</p>
-      ) : !sessions.length ? (
-        <p>Dosud bez záznamu odborné přípravy.</p>
       ) : (
-        sessions.map((s) => (
-          <div key={s.id}>
-            <strong>
-              {day(s.date)} · {trainingStatuses[s.status]}
-            </strong>
-            <span>{s.topics.map((t) => t.nameSnapshot).join(' + ')}</span>
-            <small>
-              {s.durationMinutes} min ·{' '}
-              {
-                attendanceLabels[
-                  s.participants.find((p) => p.memberId === memberId)!.status
-                ]
-              }
-            </small>
+        <>
+          <div className="member-training-summary">
+            <span>
+              Účast letos:{' '}
+              <strong>
+                {statistics.summary.attendancePercent === null
+                  ? '—'
+                  : `${statistics.summary.attendancePercent} %`}
+              </strong>
+            </span>
+            <span>
+              Absolvováno:{' '}
+              <strong>
+                {formatTrainingMinutes(statistics.summary.durationMinutes)}
+              </strong>
+            </span>
+            <span>Přítomen: {statistics.summary.present}</span>
+            <span>Omluven: {statistics.summary.excused}</span>
+            <span>Nepřítomen: {statistics.summary.absent}</span>
           </div>
-        ))
+          {!statistics.sessions.length ? (
+            <p>Dosud bez dokončené odborné přípravy v tomto roce.</p>
+          ) : (
+            statistics.sessions.map((session) => (
+              <div key={session.id}>
+                <strong>{day(session.date)}</strong>
+                <span>
+                  {session.topics
+                    .map((topic) => topic.nameSnapshot)
+                    .join(' + ')}
+                </span>
+                <small>
+                  {formatTrainingMinutes(session.durationMinutes)} ·{' '}
+                  {attendanceLabels[session.status]}
+                </small>
+              </div>
+            ))
+          )}
+        </>
       )}
     </section>
   );

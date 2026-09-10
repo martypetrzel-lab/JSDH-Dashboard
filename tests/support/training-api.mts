@@ -60,7 +60,11 @@ const db: any = {
   member: {
     findMany: async ({ where }: any) =>
       members.filter((m) =>
-        where.id ? where.id.in.includes(m.id) : m.active && !m.systemAccount,
+        typeof where.id === 'string'
+          ? m.id === where.id && !m.systemAccount
+          : where.id
+            ? where.id.in.includes(m.id)
+            : (!where.active || m.active) && !m.systemAccount,
       ),
     findUniqueOrThrow: async ({ where }: any) => find(members, where.id),
   },
@@ -145,6 +149,13 @@ const attendance =
   await import('../../app/api/training/sessions/[id]/attendance/route.ts');
 const sheet =
   await import('../../app/api/training/sessions/[id]/attendance-sheet/route.ts');
+const statistics = await import('../../app/api/training/statistics/route.ts');
+const statisticsMember =
+  await import('../../app/api/training/statistics/member/[memberId]/route.ts');
+const statisticsExport =
+  await import('../../app/api/training/statistics/export/route.ts');
+const statisticsMemberExport =
+  await import('../../app/api/training/statistics/member/[memberId]/export/route.ts');
 const request = (body: any = {}, method = 'POST', query = '') =>
   new Request('http://localhost/api/training/sessions' + query, {
     method,
@@ -156,6 +167,14 @@ const request = (body: any = {}, method = 'POST', query = '') =>
         }),
   });
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+const memberCtx = (memberId: string) => ({
+  params: Promise.resolve({ memberId }),
+});
+const statisticsRequest = (suffix = '') =>
+  new Request(
+    'http://localhost/api/training/statistics?from=2026-01-01&to=2026-12-31' +
+      suffix,
+  );
 test('admin auth chrání všechny endpointy', async () => {
   signedIn = false;
   for (const response of await Promise.all([
@@ -170,6 +189,10 @@ test('admin auth chrání všechny endpointy', async () => {
     item.DELETE(request(), ctx('x')),
     attendance.PATCH(request(), ctx('x')),
     sheet.GET(request({}, 'GET'), ctx('x')),
+    statistics.GET(statisticsRequest()),
+    statisticsMember.GET(statisticsRequest(), memberCtx('martin')),
+    statisticsExport.GET(statisticsRequest()),
+    statisticsMemberExport.GET(statisticsRequest(), memberCtx('martin')),
   ]))
     assert.equal(response.status, 401);
   signedIn = true;
@@ -300,6 +323,10 @@ test('CRUD školení a docházky zachovává identitu, potvrzení i audit', asyn
         ...payload,
         status: 'COMPLETED',
         topicIds: [t1.id],
+        participants: [
+          { memberId: 'martin', status: 'ABSENT' },
+          { memberId: 'matej', status: 'PRESENT' },
+        ],
         completedAcknowledged: true,
       }),
       ctx(session.id),
@@ -310,6 +337,31 @@ test('CRUD školení a docházky zachovává identitu, potvrzení i audit', asyn
     [t1.id],
   );
   assert.ok(audits.some((a) => a.action === 'TRAINING_ATTENDANCE_UPDATED'));
+  const overview = await (await statistics.GET(statisticsRequest())).json();
+  assert.equal(overview.summary.sessions, 1);
+  assert.equal(overview.summary.present, 1);
+  assert.equal(overview.summary.absent, 1);
+  assert.equal(overview.summary.attendancePercent, 50);
+  const memberStatistics = await (
+    await statisticsMember.GET(statisticsRequest(), memberCtx('matej'))
+  ).json();
+  assert.equal(memberStatistics.summary.present, 1);
+  assert.equal(memberStatistics.sessions.length, 1);
+  assert.equal(
+    (await statisticsExport.GET(statisticsRequest('&details=true'))).status,
+    200,
+  );
+  assert.equal(
+    (await statisticsMemberExport.GET(statisticsRequest(), memberCtx('matej')))
+      .status,
+    200,
+  );
+  assert.ok(
+    audits.some((a) => a.action === 'TRAINING_STATISTICS_PDF_GENERATED'),
+  );
+  assert.ok(
+    audits.some((a) => a.action === 'TRAINING_MEMBER_STATISTICS_PDF_GENERATED'),
+  );
   const history = await (
     await list.GET(request({}, 'GET', '?memberId=matej'))
   ).json();

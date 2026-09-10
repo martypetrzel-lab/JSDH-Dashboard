@@ -17,6 +17,17 @@ import {
   importTrainingTopics,
 } from '../prisma/training-topics.ts';
 import { createAttendancePdf } from '../lib/training-pdf.ts';
+import {
+  buildTrainingStatistics,
+  formatTrainingMinutes,
+  statisticsPeriod,
+  statisticsPresetPeriod,
+  trainingStatisticsQuerySchema,
+} from '../lib/training-statistics.ts';
+import {
+  createMemberTrainingStatisticsPdf,
+  createTrainingStatisticsPdf,
+} from '../lib/training-statistics-pdf.ts';
 import { PDFDocument } from 'pdf-lib';
 
 const draft = {
@@ -290,4 +301,156 @@ test('training endpointy: autentizace, CRUD, dokončení, docházka a PDF', () =
   );
   assert.equal(child.status, 0, child.stdout + '\n' + child.stderr);
   assert.match(child.stdout, /tests 2/);
+});
+
+const statisticsFixture = (activeOnly = false) =>
+  buildTrainingStatistics(
+    [
+      { id: 'a', firstName: 'Žaneta', lastName: 'Černá', active: true },
+      { id: 'b', firstName: 'Aleš', lastName: 'Říha', active: true },
+      { id: 'c', firstName: 'Člen', lastName: 'Bez účasti', active: false },
+      {
+        id: 'system',
+        firstName: 'Poplachový',
+        lastName: 'uživatel',
+        active: true,
+        systemAccount: true,
+      },
+    ],
+    [
+      {
+        id: 'completed-1',
+        date: '2026-09-03',
+        durationMinutes: 120,
+        status: 'COMPLETED',
+        topics: [
+          {
+            topicId: 't1',
+            nameSnapshot: 'Průzkum',
+            categorySnapshot: 'Bojový řád',
+            subcategorySnapshot: 'Obecné zásady',
+          },
+        ],
+        participants: [
+          { memberId: 'a', status: 'PRESENT' },
+          { memberId: 'b', status: 'ABSENT' },
+          { memberId: 'system', status: 'PRESENT' },
+        ],
+      },
+      {
+        id: 'completed-2',
+        date: '2026-09-17',
+        durationMinutes: 90,
+        status: 'COMPLETED',
+        topics: [
+          {
+            topicId: 't2',
+            nameSnapshot: 'Výcvik s hadicemi',
+            categorySnapshot: 'Cvičební řád',
+            subcategorySnapshot: 'Obecná činnost při technickém výcviku',
+          },
+          {
+            topicId: 't3',
+            nameSnapshot: 'Pracovní uzly',
+            categorySnapshot: 'Cvičební řád',
+            subcategorySnapshot: 'Obecná činnost při technickém výcviku',
+          },
+        ],
+        participants: [
+          { memberId: 'a', status: 'PRESENT' },
+          { memberId: 'b', status: 'EXCUSED' },
+        ],
+      },
+      {
+        id: 'draft',
+        date: '2026-09-24',
+        durationMinutes: 300,
+        status: 'DRAFT',
+        topics: [],
+        participants: [{ memberId: 'a', status: 'ABSENT' }],
+      },
+      {
+        id: 'outside-period',
+        date: '2026-10-01',
+        durationMinutes: 180,
+        status: 'COMPLETED',
+        topics: [],
+        participants: [{ memberId: 'a', status: 'PRESENT' }],
+      },
+    ],
+    { from: '2026-09-01', to: '2026-09-30' },
+    activeOnly,
+  );
+
+test('statistika účasti počítá pouze dokončená školení a všechny attendance stavy', () => {
+  const statistics = statisticsFixture();
+  assert.deepEqual(statistics.summary, {
+    sessions: 2,
+    durationMinutes: 210,
+    present: 2,
+    absent: 1,
+    excused: 1,
+    attendanceRecords: 4,
+    attendancePercent: 50,
+  });
+  const present = statistics.members.find((member) => member.id === 'a')!;
+  const missing = statistics.members.find((member) => member.id === 'b')!;
+  const empty = statistics.members.find((member) => member.id === 'c')!;
+  assert.equal(present.durationMinutes, 210);
+  assert.equal(present.attendancePercent, 100);
+  assert.equal(present.lastAttendance, '2026-09-17');
+  assert.equal(missing.durationMinutes, 0);
+  assert.equal(missing.attendancePercent, 0);
+  assert.equal(empty.attendancePercent, null);
+  assert.equal(
+    statistics.members.some((member) => member.id === 'system'),
+    false,
+  );
+  assert.equal(
+    statisticsFixture(true).members.some((member) => member.id === 'c'),
+    false,
+  );
+  assert.equal(formatTrainingMinutes(90), '1 h 30 min');
+});
+
+test('měsíční, roční a vlastní období používá celé kalendářní dny', () => {
+  const now = new Date('2026-09-10T10:00:00.000Z');
+  const month = statisticsPresetPeriod('THIS_MONTH', now);
+  const previousMonth = statisticsPresetPeriod('LAST_MONTH', now);
+  const year = statisticsPresetPeriod('THIS_YEAR', now);
+  const custom = statisticsPeriod('2026-03-29', '2026-03-29');
+  assert.deepEqual([month.from, month.to], ['2026-09-01', '2026-09-30']);
+  assert.deepEqual(
+    [previousMonth.from, previousMonth.to],
+    ['2026-08-01', '2026-08-31'],
+  );
+  assert.deepEqual([year.from, year.to], ['2026-01-01', '2026-12-31']);
+  assert.equal(custom.fromDate.toISOString(), '2026-03-29T00:00:00.000Z');
+  assert.equal(custom.toExclusive.toISOString(), '2026-03-30T00:00:00.000Z');
+  assert.equal(
+    trainingStatisticsQuerySchema.parse({
+      from: '2026-01-01',
+      to: '2026-12-31',
+      activeOnly: 'false',
+    }).activeOnly,
+    false,
+  );
+});
+
+test('PDF statistiky za měsíc, rok i člena podporuje češtinu a stránkování', async () => {
+  const month = statisticsFixture();
+  const year = { ...month, period: { from: '2026-01-01', to: '2026-12-31' } };
+  const monthPdf = await PDFDocument.load(
+    await createTrainingStatisticsPdf(month, true),
+  );
+  const yearPdf = await PDFDocument.load(
+    await createTrainingStatisticsPdf(year, false),
+  );
+  const memberPdf = await PDFDocument.load(
+    await createMemberTrainingStatisticsPdf(month, month.members[0]),
+  );
+  assert.ok(monthPdf.getPageCount() >= 3);
+  assert.equal(yearPdf.getTitle(), 'Přehled odborné přípravy a účasti členů');
+  assert.equal(memberPdf.getTitle(), 'Přehled odborné přípravy člena');
+  assert.ok(Math.abs(monthPdf.getPage(0).getWidth() - 841.89) < 0.01);
 });
