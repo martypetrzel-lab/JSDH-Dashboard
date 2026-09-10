@@ -361,6 +361,7 @@ model TrainingTopic {
   code String @unique
   name String
   category String
+  subcategory String
   description String?
   source String?
   sourceUrl String?
@@ -399,6 +400,7 @@ model TrainingSessionTopic {
   topicId String
   nameSnapshot String
   categorySnapshot String
+  subcategorySnapshot String
   session TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   topic TrainingTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
   @@unique([sessionId, topicId])

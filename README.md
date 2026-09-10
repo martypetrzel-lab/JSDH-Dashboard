@@ -6,7 +6,7 @@ Na stránce **Členové** je dostupný hromadný import z Excelu, Google Sheets 
 
 ## Školení / Odborná příprava
 
-Modul **Školení / Odborná příprava** eviduje témata, školitele a docházku, nabízí archiv i tiskovou prezenční listinu PDF. Postup nasazení a používání je v [dokumentaci školení](docs/training.md). Knihovna obsahuje 273 témat ve 31 kategoriích.
+Modul **Školení / Odborná příprava** eviduje témata, školitele a docházku, nabízí archiv i tiskovou prezenční listinu PDF. Postup nasazení a používání je v [dokumentaci školení](docs/training.md). Výchozí knihovna obsahuje 222 témat Bojového a Cvičebního řádu v 15 podkategoriích.
 
 ## Časové pravidlo služby
 

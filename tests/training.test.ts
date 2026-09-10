@@ -9,6 +9,7 @@ import {
   assertTrainingMembers,
   sessionSchema,
   topicSchema,
+  topicMatchesSearch,
   requireCompletedAcknowledgement,
 } from '../lib/training.ts';
 import {
@@ -117,24 +118,83 @@ test('archiv filtruje datum začátkem měsíce, kategorii, téma, formu, stav, 
   assert.equal(where.status, 'COMPLETED');
   assert.equal(where.trainingType, 'THEORY');
 });
-test('knihovna obsahuje všechny kategorie a opakovaný import nezduplikuje témata', async () => {
-  assert.equal(new Set(trainingTopicCatalog.map((t) => t.category)).size, 31);
-  assert.equal(trainingTopicCatalog.length, 273);
-  const store = new Map();
+test('katalog obsahuje pouze Bojový a Cvičební řád s podkategoriemi a stabilními kódy', () => {
+  assert.deepEqual(
+    [...new Set(trainingTopicCatalog.map((t) => t.category))],
+    ['Bojový řád', 'Cvičební řád'],
+  );
+  assert.equal(trainingTopicCatalog.length, 222);
+  assert.equal(
+    new Set(trainingTopicCatalog.map((t) => t.subcategory)).size,
+    15,
+  );
+  assert.deepEqual(
+    [
+      ...new Set(
+        trainingTopicCatalog
+          .filter((topic) => topic.category === 'Bojový řád')
+          .map((topic) => topic.subcategory),
+      ),
+    ],
+    [
+      'Obecné zásady',
+      'Nebezpečí',
+      'Řízení',
+      'Ochrana obyvatelstva',
+      'Požární zásah',
+      'Součinnost',
+      'Dopravní nehody',
+      'Nebezpečné látky',
+      'Technický zásah',
+    ],
+  );
+  assert.equal(
+    new Set(trainingTopicCatalog.map((t) => t.code)).size,
+    trainingTopicCatalog.length,
+  );
+  assert.ok(
+    trainingTopicCatalog.every((t) =>
+      t.code.startsWith(
+        t.category === 'Bojový řád' ? 'bojovy-rad-' : 'cviceny-rad-',
+      ),
+    ),
+  );
+  assert.ok(
+    trainingTopicCatalog.every(
+      (t) =>
+        t.source === 'HasičiVzdělávání' && t.sourceType === 'HASICI_VZDELAVANI',
+    ),
+  );
+});
+test('opakovaný import nezduplikuje témata, aktualizuje metadata a zachová active', async () => {
+  const store = new Map<string, Record<string, unknown>>();
   const upsert = async (topic: (typeof trainingTopicCatalog)[number]) => {
     topicSchema.parse(topic);
-    if (!store.has(topic.code)) store.set(topic.code, topic);
+    const previous = store.get(topic.code);
+    store.set(
+      topic.code,
+      previous
+        ? { ...previous, ...topic, active: previous.active }
+        : { ...topic, active: true },
+    );
   };
   await importTrainingTopics(upsert);
+  const first = trainingTopicCatalog[0];
+  store.set(first.code, {
+    ...store.get(first.code),
+    name: 'Starý název',
+    active: false,
+  });
   await importTrainingTopics(upsert);
-  assert.equal(store.size, 273);
-  assert.ok(
-    trainingTopicCatalog.filter((t) => t.name === 'Práce na vodě').length > 1,
-  );
-  for (const topic of trainingTopicCatalog.filter(
-    (t) => t.sourceType === 'INTERNAL',
-  ))
-    assert.equal(topic.sourceUrl, null);
+  assert.equal(store.size, 222);
+  assert.equal(store.get(first.code)?.name, first.name);
+  assert.equal(store.get(first.code)?.active, false);
+});
+test('hledání funguje přes název, oblast i podkategorii bez diakritiky', () => {
+  const pruzkum = trainingTopicCatalog.find((t) => t.name === 'Průzkum')!;
+  assert.equal(topicMatchesSearch(pruzkum, 'pruzkum'), true);
+  assert.equal(topicMatchesSearch(pruzkum, 'obecne zasady'), true);
+  assert.equal(topicMatchesSearch(pruzkum, 'cvičební'), false);
 });
 test('migration vytvoří tabulky, unikátní identity, cascade školení a zachová audit', async () => {
   const db = new PGlite();
@@ -148,16 +208,22 @@ test('migration vytvoří tabulky, unikátní identity, cascade školení a zach
         'utf8',
       ),
     );
+    await db.exec(
+      readFileSync(
+        'prisma/migrations/20260909210000_training_topic_subcategory/migration.sql',
+        'utf8',
+      ),
+    );
     await db.exec(`INSERT INTO "Member" VALUES ('martin'),('matej');
-      INSERT INTO "TrainingTopic" ("id","code","name","category","updatedAt") VALUES ('t','topic','Téma','Test',now());
+      INSERT INTO "TrainingTopic" ("id","code","name","category","subcategory","updatedAt") VALUES ('t','topic','Téma','Test','Podkategorie',now());
       INSERT INTO "TrainingSession" ("id","date","durationMinutes","trainingType","instructorName","updatedAt") VALUES ('s','2026-09-10',120,'COMBINED','Test',now());
-      INSERT INTO "TrainingSessionTopic" ("id","sessionId","topicId","nameSnapshot","categorySnapshot") VALUES ('st','s','t','Téma','Test');
+      INSERT INTO "TrainingSessionTopic" ("id","sessionId","topicId","nameSnapshot","categorySnapshot","subcategorySnapshot") VALUES ('st','s','t','Téma','Test','Podkategorie');
       INSERT INTO "TrainingParticipant" ("id","sessionId","memberId","status","nameSnapshot","roleSnapshot") VALUES ('p1','s','martin','PRESENT','Martin','Hasič'),('p2','s','matej','EXCUSED','Matěj','Hasič');
       INSERT INTO "AuditLog" VALUES ('audit');`);
     await assert.rejects(db.exec(`DELETE FROM "TrainingTopic" WHERE id='t'`));
     await assert.rejects(
       db.exec(
-        `INSERT INTO "TrainingTopic" ("id","code","name","category","updatedAt") VALUES ('duplicate','topic','Téma','Test',now())`,
+        `INSERT INTO "TrainingTopic" ("id","code","name","category","subcategory","updatedAt") VALUES ('duplicate','topic','Téma','Test','Podkategorie',now())`,
       ),
     );
     await db.exec(`DELETE FROM "TrainingSession" WHERE id='s'`);
@@ -189,13 +255,12 @@ test('PDF s českou diakritikou a mnoha účastníky má A4 a více stran', asyn
     notes: 'ě š č ř ž ý á í é ú ů ď ť ň',
     status: 'COMPLETED',
     updatedAt: '2026-09-10',
-    topics: [
-      {
-        topicId: 't',
-        nameSnapshot: 'Dýchací technika',
-        categorySnapshot: 'Odborná příprava',
-      },
-    ],
+    topics: Array.from({ length: 40 }, (_, i) => ({
+      topicId: `t-${i}`,
+      nameSnapshot: `Téma odborné přípravy číslo ${i + 1}`,
+      categorySnapshot: i < 20 ? 'Bojový řád' : 'Cvičební řád',
+      subcategorySnapshot: i % 2 === 0 ? 'Obecné zásady' : 'Praktický výcvik',
+    })),
     participants: Array.from({ length: 55 }, (_, i) => ({
       memberId: String(i),
       nameSnapshot: 'Testovací Člen ' + i,

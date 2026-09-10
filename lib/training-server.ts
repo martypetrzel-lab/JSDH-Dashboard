@@ -75,7 +75,13 @@ export async function trainingRequest(
 export async function topicsGet() {
   return NextResponse.json(
     await getPrisma().trainingTopic.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      where: { active: true },
+      orderBy: [
+        { category: 'asc' },
+        { sortOrder: 'asc' },
+        { subcategory: 'asc' },
+        { name: 'asc' },
+      ],
     }),
   );
 }
@@ -283,6 +289,7 @@ export async function sessionSave(
         topicId,
         nameSnapshot: prior?.nameSnapshot ?? topic.name,
         categorySnapshot: prior?.categorySnapshot ?? topic.category,
+        subcategorySnapshot: prior?.subcategorySnapshot ?? topic.subcategory,
       };
     });
     const data = {

@@ -6,7 +6,7 @@ Modul používá stávající členy podle memberId a je nezávislý na plánov�
 
 Po nasazení migrace spusťte `npm run training:topics:import`. Railway provede migraci i import v pre-deploy krocích z railway.toml. Při ručním přepsání konfigurace Railway zachovejte pořadí obou kroků.
 
-Import obsahuje 273 témat ve 31 kategoriích ze zadání jednotky. Stabilní kód zahrnuje kategorii i název: stejnojmenné téma a specializační kurz zůstávají samostatnými položkami. Opakované spuštění pouze doplní chybějící kódy; nemění existující názvy, zdroje, pořadí ani aktivní stav. Celé texty metodik nejsou součástí knihovny. Vlastní témata se spravují v záložce Témata.
+Import obsahuje 222 témat Bojového a Cvičebního řádu v 15 podkategoriích. Stabilní kód zahrnuje oblast, podkategorii i název. Opakované spuštění nevytvoří duplicity, aktualizuje katalogová metadata a zachová ručně změněný aktivní stav aktuálního tématu. Známé položky starého automatického katalogu mimo tyto dvě oblasti deaktivuje; ručně vytvořených témat se nedotkne. Celé texty metodik nejsou součástí knihovny.
 
 ## Evidence a archiv
 

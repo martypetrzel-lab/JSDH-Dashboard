@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   attendanceLabels,
+  topicMatchesSearch,
   trainingStatuses,
   trainingTypes,
   type TrainingSessionRow,
@@ -498,13 +499,7 @@ export function TrainingModule({
                 <dd>{trainingStatuses[detail.status]}</dd>
               </dl>
               <h3>Témata odborné přípravy</h3>
-              <ul>
-                {detail.topics.map((t) => (
-                  <li key={t.topicId}>
-                    {t.categorySnapshot} / {t.nameSnapshot}
-                  </li>
-                ))}
-              </ul>
+              <TrainingTopicGroups topics={detail.topics} />
               {detail.notes && <p className="training-notes">{detail.notes}</p>}
               <h3>Účastníci</h3>
               <div className="training-attendance">
@@ -544,6 +539,46 @@ export function TrainingModule({
   );
 }
 
+function TrainingTopicGroups({
+  topics,
+}: {
+  topics: TrainingSessionRow['topics'];
+}) {
+  return (
+    <div className="training-topic-groups">
+      {[...new Set(topics.map((topic) => topic.categorySnapshot))].map(
+        (category) => (
+          <section key={category}>
+            <strong>{category}</strong>
+            {[
+              ...new Set(
+                topics
+                  .filter((topic) => topic.categorySnapshot === category)
+                  .map((topic) => topic.subcategorySnapshot),
+              ),
+            ].map((subcategory) => (
+              <div key={subcategory}>
+                <b>{subcategory}</b>
+                <ul>
+                  {topics
+                    .filter(
+                      (topic) =>
+                        topic.categorySnapshot === category &&
+                        topic.subcategorySnapshot === subcategory,
+                    )
+                    .map((topic) => (
+                      <li key={topic.topicId}>{topic.nameSnapshot}</li>
+                    ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+        ),
+      )}
+    </div>
+  );
+}
+
 function TopicLibrary({
   topics,
   onEdit,
@@ -554,16 +589,11 @@ function TopicLibrary({
   onDelete: (t: TrainingTopicRow) => void;
 }) {
   const [search, setSearch] = useState('');
-  const filtered = topics.filter((t) =>
-    (t.name + ' ' + t.category)
-      .toLocaleLowerCase('cs')
-      .includes(search.toLocaleLowerCase('cs')),
-  );
+  const filtered = topics.filter((t) => topicMatchesSearch(t, search));
   return (
     <article className="panel">
       <div className="training-actions">
-        <h3>Knihovna témat</h3>
-        <Button onClick={() => onEdit('NEW')}>+ Nové téma</Button>
+        <h3>Knihovna témat · Témat: {topics.length}</h3>
         <input
           aria-label="Hledat téma"
           placeholder="Hledat téma nebo kategorii"
@@ -573,8 +603,8 @@ function TopicLibrary({
       </div>
       {!topics.length && (
         <p>
-          Knihovna zatím neobsahuje témata. Přidejte vlastní nebo spusťte
-          připravený import knihovny při nasazení.
+          Knihovna zatím neobsahuje témata. Spusťte připravený import knihovny
+          při nasazení.
         </p>
       )}
       {[...new Set(filtered.map((t) => t.category))].map((category) => (
@@ -584,35 +614,61 @@ function TopicLibrary({
           open={search ? true : undefined}
         >
           <summary>
-            {category} ({filtered.filter((t) => t.category === category).length}
-            )
+            {category.toLocaleUpperCase('cs-CZ')} (
+            {filtered.filter((t) => t.category === category).length})
           </summary>
-          {filtered
-            .filter((t) => t.category === category)
-            .map((t) => (
-              <div className="training-topic" key={t.id}>
-                <div>
-                  <strong>{t.name}</strong>
-                  {!t.active && <span> · Neaktivní</span>}
-                  <small>
-                    {t.code} · {t.source || 'Interní téma'}
-                  </small>
-                  {t.sourceUrl && (
-                    <a href={t.sourceUrl} target="_blank" rel="noreferrer">
-                      Zdroj
-                    </a>
-                  )}
-                </div>
-                <div className="training-actions">
-                  <Button variant="outline" onClick={() => onEdit(t)}>
-                    Upravit
-                  </Button>
-                  <Button variant="ghost" onClick={() => onDelete(t)}>
-                    Odstranit
-                  </Button>
-                </div>
-              </div>
-            ))}
+          {[
+            ...new Set(
+              filtered
+                .filter((t) => t.category === category)
+                .map((t) => t.subcategory),
+            ),
+          ].map((subcategory) => (
+            <details
+              key={subcategory}
+              className="training-subcategory"
+              open={search ? true : undefined}
+            >
+              <summary>
+                {subcategory} (
+                {
+                  filtered.filter(
+                    (t) =>
+                      t.category === category && t.subcategory === subcategory,
+                  ).length
+                }
+                )
+              </summary>
+              {filtered
+                .filter(
+                  (t) =>
+                    t.category === category && t.subcategory === subcategory,
+                )
+                .map((t) => (
+                  <div className="training-topic" key={t.id}>
+                    <div>
+                      <strong>{t.name}</strong>
+                      <small>
+                        {t.code} · {t.source}
+                      </small>
+                      {t.sourceUrl && (
+                        <a href={t.sourceUrl} target="_blank" rel="noreferrer">
+                          Zdroj
+                        </a>
+                      )}
+                    </div>
+                    <div className="training-actions">
+                      <Button variant="outline" onClick={() => onEdit(t)}>
+                        Upravit
+                      </Button>
+                      <Button variant="ghost" onClick={() => onDelete(t)}>
+                        Deaktivovat
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </details>
+          ))}
         </details>
       ))}
     </article>
@@ -632,6 +688,7 @@ function TopicEditor({
     code: topic?.code ?? '',
     name: topic?.name ?? '',
     category: topic?.category ?? '',
+    subcategory: topic?.subcategory ?? '',
     description: topic?.description ?? '',
     source: topic?.source ?? '',
     sourceUrl: topic?.sourceUrl ?? '',
@@ -682,6 +739,7 @@ function TopicEditor({
               ['name', 'Název'],
               ['code', 'Stabilní kód'],
               ['category', 'Kategorie'],
+              ['subcategory', 'Podkategorie'],
               ['source', 'Zdroj'],
               ['sourceUrl', 'URL zdroje'],
             ] as const
@@ -689,7 +747,9 @@ function TopicEditor({
             <label key={key}>
               {label}
               <input
-                required={['name', 'code', 'category'].includes(key)}
+                required={['name', 'code', 'category', 'subcategory'].includes(
+                  key,
+                )}
                 type={key === 'sourceUrl' ? 'url' : 'text'}
                 value={form[key]}
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
@@ -869,9 +929,7 @@ function SessionEditor({
     (t) =>
       (t.active || selected.includes(t.id)) &&
       (!category || t.category === category) &&
-      (t.name + ' ' + t.category)
-        .toLocaleLowerCase('cs')
-        .includes(search.toLocaleLowerCase('cs')),
+      topicMatchesSearch(t, search),
   );
   return (
     <Dialog
@@ -992,7 +1050,7 @@ function SessionEditor({
             />
           </label>
           <section className="training-wide">
-            <h3>Témata ({selected.length} vybráno)</h3>
+            <h3>Vybraná témata: {selected.length}</h3>
             <div className="training-topic-selection">
               {selected.map((id) => (
                 <button
@@ -1031,30 +1089,81 @@ function SessionEditor({
             <div className="training-topic-picker">
               {[...new Set(visibleTopics.map((t) => t.category))].map((c) => (
                 <details key={c} open={!!search || !!category}>
-                  <summary>{c}</summary>
-                  {visibleTopics
-                    .filter((t) => t.category === c)
-                    .map((t) => (
-                      <label className="training-check" key={t.id}>
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(t.id)}
-                          onChange={(e) =>
-                            setSelected(
-                              e.target.checked
-                                ? [...selected, t.id]
-                                : selected.filter((id) => id !== t.id),
-                            )
-                          }
-                        />
-                        {t.name}
-                        {!t.active ? ' (neaktivní)' : ''}
-                      </label>
-                    ))}
+                  <summary>
+                    {c.toLocaleUpperCase('cs-CZ')} (
+                    {visibleTopics.filter((t) => t.category === c).length})
+                  </summary>
+                  {[
+                    ...new Set(
+                      visibleTopics
+                        .filter((t) => t.category === c)
+                        .map((t) => t.subcategory),
+                    ),
+                  ].map((subcategory) => {
+                    const group = visibleTopics.filter(
+                      (t) => t.category === c && t.subcategory === subcategory,
+                    );
+                    const allSelected = group.every((t) =>
+                      selected.includes(t.id),
+                    );
+                    return (
+                      <details
+                        key={subcategory}
+                        className="training-subcategory"
+                        open={!!search || !!category}
+                      >
+                        <summary>
+                          <span>
+                            {subcategory} ({group.length})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setSelected(
+                                allSelected
+                                  ? selected.filter(
+                                      (id) =>
+                                        !group.some((topic) => topic.id === id),
+                                    )
+                                  : [
+                                      ...new Set([
+                                        ...selected,
+                                        ...group.map((topic) => topic.id),
+                                      ]),
+                                    ],
+                              );
+                            }}
+                          >
+                            {allSelected ? 'Odebrat vše' : 'Vybrat vše'}
+                          </button>
+                        </summary>
+                        {group.map((t) => (
+                          <label className="training-check" key={t.id}>
+                            <input
+                              type="checkbox"
+                              checked={selected.includes(t.id)}
+                              onChange={(e) =>
+                                setSelected(
+                                  e.target.checked
+                                    ? [...selected, t.id]
+                                    : selected.filter((id) => id !== t.id),
+                                )
+                              }
+                            />
+                            {t.name}
+                          </label>
+                        ))}
+                      </details>
+                    );
+                  })}
                 </details>
               ))}
             </div>
-            {!topics.length && <p>Nejdříve přidejte téma do knihovny témat.</p>}
+            {!topics.length && (
+              <p>Knihovna témat zatím nebyla načtena z databáze.</p>
+            )}
           </section>
           <section className="training-wide">
             <h3>Účastníci</h3>

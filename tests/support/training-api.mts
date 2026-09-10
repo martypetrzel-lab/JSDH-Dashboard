@@ -177,18 +177,38 @@ test('admin auth chrání všechny endpointy', async () => {
 test('CRUD školení a docházky zachovává identitu, potvrzení i audit', async () => {
   const t1 = await (
     await topic.POST(
-      request({ code: 'tema-1', name: 'První téma', category: 'Test' }),
+      request({
+        code: 'tema-1',
+        name: 'První téma',
+        category: 'Test',
+        subcategory: 'Obecné',
+      }),
     )
   ).json();
   const t2 = await (
     await topic.POST(
-      request({ code: 'tema-2', name: 'Druhé téma', category: 'Test' }),
+      request({
+        code: 'tema-2',
+        name: 'Druhé téma',
+        category: 'Test',
+        subcategory: 'Obecné',
+      }),
     )
   ).json();
+  const availableTopics = await (await topic.GET()).json();
+  assert.deepEqual(
+    availableTopics.map((entry: any) => entry.id),
+    [t1.id, t2.id],
+  );
   assert.equal(
     (
       await topic.POST(
-        request({ code: 'tema-1', name: 'Duplicita', category: 'Test' }),
+        request({
+          code: 'tema-1',
+          name: 'Duplicita',
+          category: 'Test',
+          subcategory: 'Obecné',
+        }),
       )
     ).status,
     409,
@@ -226,6 +246,16 @@ test('CRUD školení a docházky zachovává identitu, potvrzení i audit', asyn
     session.participants[0].memberId,
     session.participants[1].memberId,
   );
+  const loaded = await (
+    await item.GET(request({}, 'GET'), ctx(session.id))
+  ).json();
+  assert.deepEqual(
+    loaded.topics.map((entry: any) => entry.topicId),
+    [t1.id, t2.id],
+  );
+  const twoTopicPdf = await sheet.GET(request({}, 'GET'), ctx(session.id));
+  assert.equal(twoTopicPdf.status, 200);
+  assert.ok((await twoTopicPdf.arrayBuffer()).byteLength > 10000);
   assert.equal(
     (
       await item.PATCH(
@@ -263,6 +293,21 @@ test('CRUD školení a docházky zachovává identitu, potvrzení i audit', asyn
       )
     ).status,
     200,
+  );
+  const reduced = await (
+    await item.PATCH(
+      request({
+        ...payload,
+        status: 'COMPLETED',
+        topicIds: [t1.id],
+        completedAcknowledged: true,
+      }),
+      ctx(session.id),
+    )
+  ).json();
+  assert.deepEqual(
+    reduced.topics.map((entry: any) => entry.topicId),
+    [t1.id],
   );
   assert.ok(audits.some((a) => a.action === 'TRAINING_ATTENDANCE_UPDATED'));
   const history = await (

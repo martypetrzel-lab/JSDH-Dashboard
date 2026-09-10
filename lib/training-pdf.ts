@@ -101,17 +101,27 @@ export async function createAttendancePdf(
     paragraph('Stav: NÁVRH - školení dosud není dokončeno.');
   y -= 8;
   paragraph('TÉMATA ODBORNÉ PŘÍPRAVY', 11);
-  session.topics.forEach((topic, index) =>
-    paragraph(
-      index +
-        1 +
-        '. ' +
-        topic.nameSnapshot +
-        ' (' +
-        topic.categorySnapshot +
-        ')',
-    ),
-  );
+  let topicNumber = 1;
+  for (const category of new Set(
+    session.topics.map((topic) => topic.categorySnapshot),
+  )) {
+    for (const subcategory of new Set(
+      session.topics
+        .filter((topic) => topic.categorySnapshot === category)
+        .map((topic) => topic.subcategorySnapshot),
+    )) {
+      ensure(35);
+      paragraph(`${category} - ${subcategory}`, 10);
+      for (const topic of session.topics.filter(
+        (topic) =>
+          topic.categorySnapshot === category &&
+          topic.subcategorySnapshot === subcategory,
+      )) {
+        paragraph(`${topicNumber}. ${topic.nameSnapshot}`);
+        topicNumber += 1;
+      }
+    }
+  }
   if (session.notes) {
     ensure(45);
     paragraph('Obsah / poznámka k odborné přípravě:', 11);

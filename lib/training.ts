@@ -11,6 +11,19 @@ export const attendanceLabels = {
   EXCUSED: 'Omluven',
 };
 export const trainingStatuses = { DRAFT: 'Návrh', COMPLETED: 'Dokončeno' };
+const searchable = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('cs-CZ');
+export function topicMatchesSearch(
+  topic: { name: string; category: string; subcategory: string },
+  query: string,
+) {
+  return searchable(
+    `${topic.category} ${topic.subcategory} ${topic.name}`,
+  ).includes(searchable(query.trim()));
+}
 export const primaryRoleLabels: Record<string, string> = {
   UNIT_COMMANDER: 'Velitel jednotky',
   SQUAD_COMMANDER: 'Velitel družstva',
@@ -31,6 +44,7 @@ export const topicSchema = z.object({
     ),
   name: z.string().trim().min(1).max(300),
   category: z.string().trim().min(1).max(160),
+  subcategory: z.string().trim().min(1).max(160),
   description: optionalText,
   source: optionalText,
   sourceUrl: z
@@ -222,7 +236,12 @@ export type TrainingSessionRow = {
   notes: string | null;
   status: keyof typeof trainingStatuses;
   updatedAt: string;
-  topics: { topicId: string; nameSnapshot: string; categorySnapshot: string }[];
+  topics: {
+    topicId: string;
+    nameSnapshot: string;
+    categorySnapshot: string;
+    subcategorySnapshot: string;
+  }[];
   participants: {
     memberId: string;
     nameSnapshot: string;
