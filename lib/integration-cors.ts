@@ -1,4 +1,4 @@
-const DEFAULT_INTEGRATION_ALLOWED_ORIGINS = ["http://localhost:5173"];
+const DEFAULT_INTEGRATION_ALLOWED_ORIGINS = ["https://bradacovi.eu"];
 
 export function integrationAllowedOrigins(value = process.env.INTEGRATION_ALLOWED_ORIGINS) {
   const origins = value

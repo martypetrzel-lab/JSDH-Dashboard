@@ -47,13 +47,13 @@ test("integration API odmítne chybějící a špatný klíč a správný přijm
 
 test("integration API podporuje CORS pouze pro nakonfigurované originy", () => {
   const previous = process.env.INTEGRATION_ALLOWED_ORIGINS;
-  process.env.INTEGRATION_ALLOWED_ORIGINS = "http://localhost:5173, http://localhost:3000";
+  process.env.INTEGRATION_ALLOWED_ORIGINS = "https://bradacovi.eu, https://example.cz";
 
   const allowed = integrationCorsHeaders(new Request(
     "http://localhost/api/integration/current-crew",
-    { headers: { Origin: "http://localhost:5173" } },
+    { headers: { Origin: "https://bradacovi.eu" } },
   ));
-  assert.equal(allowed.get("Access-Control-Allow-Origin"), "http://localhost:5173");
+  assert.equal(allowed.get("Access-Control-Allow-Origin"), "https://bradacovi.eu");
   assert.equal(allowed.get("Access-Control-Max-Age"), "86400");
 
   const denied = integrationCorsHeaders(new Request(
@@ -64,6 +64,18 @@ test("integration API podporuje CORS pouze pro nakonfigurované originy", () => 
 
   if (previous === undefined) delete process.env.INTEGRATION_ALLOWED_ORIGINS;
   else process.env.INTEGRATION_ALLOWED_ORIGINS = previous;
+});
+
+test("integration API používá bradacovi.eu jako bezpečný výchozí origin", () => {
+  const previous = process.env.INTEGRATION_ALLOWED_ORIGINS;
+  delete process.env.INTEGRATION_ALLOWED_ORIGINS;
+  const headers = integrationCorsHeaders(new Request(
+    "http://localhost/api/integration/current-crew",
+    { headers: { Origin: "https://bradacovi.eu" } },
+  ));
+
+  assert.equal(headers.get("Access-Control-Allow-Origin"), "https://bradacovi.eu");
+  if (previous !== undefined) process.env.INTEGRATION_ALLOWED_ORIGINS = previous;
 });
 
 test("current-crew endpoint vrací korektní CORS preflight a CORS také při 401", () => {

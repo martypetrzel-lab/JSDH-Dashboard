@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
-const allowedOrigin = "http://localhost:5173";
+const allowedOrigin = "https://bradacovi.eu";
 process.env.INTEGRATION_ALLOWED_ORIGINS = allowedOrigin;
 const databaseCalls = { settings: 0, services: 0 };
 const db = {
